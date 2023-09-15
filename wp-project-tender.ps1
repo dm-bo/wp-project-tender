@@ -1,121 +1,11 @@
 ﻿
 ### Defining functions ###
 
-# This goes first
-function Assert-IsNonInteractiveShell {
-    $NonInteractive = [Environment]::GetCommandLineArgs() | Where-Object{ $_ -like '-NonI*' }
-
-    if ([Environment]::UserInteractive -and -not $NonInteractive) {
-        # We are in an interactive shell.
-        return $false
-    }
-
-    return $true
-}
-
-# This goes ASAP (depends on Assert-IsNonInteractiveShell)
-function Append-Log {
-    param (
-        [Parameter(ValueFromPipeline,Mandatory=$true)]
-        $InputString,
-        # Also log last entry from $Error
-        # Useful when called from "catch" section
-        [switch]$AppendError = $false
-    )
-    process
-    {
-        # Decorating depends on Error Level (guessing)
-        if ($InputString -like "WARNING*") {
-            # $prefix = "WARNING"
-            # https://stackoverflow.com/questions/67236548/variables-that-contains-the-color-of-a-text-in-powershell
-            $format1 = @{ ForegroundColor = "Yellow" }
-        } elseif ($InputString -like "ERROR*") {
-            # $prefix = "ERROR"
-            $format1 = @{ ForegroundColor = "White" }
-        } elseif (($InputString -like "CRITICAL*") -or ($InputString -like "FATAL*")) {
-            # $prefix = "CRITICAL"
-            $format1 = @{ BackgroundColor = "DarkRed" }
-        } elseif ($InputString -like "INFO*") {
-            # $prefix = "CRITICAL"
-            $format1 = @{ ForegroundColor = "Cyan" }
-        } else {
-            # $prefix = "INFO"
-            $format1 = @{ ForegroundColor = "White" }
-        }
-        
-        if ($InputString -is [string]) {
-            #$logentry = "$(Get-Date -UFormat "%Y-%m-%d %T") $prefix`: $InputString"
-            $logentry = "$(Get-Date -UFormat "%Y-%m-%d %T")  $InputString"
-            if (Assert-IsNonInteractiveShell) {
-                $logentry | Out-File -FilePath $log -Append
-            } else {
-                $logentry | Write-Host @format1
-            }
-            if ($AppendError){
-                "`$Error is the following: $($Error[0].ToString())" | Append-Log
-            }
-        } else {
-            #throw "Input object is not a string."
-            "$(Get-Date -UFormat "%Y-%m-%d %T") WARNING: Cannot create log entry - not a string" | Append-Log
-        }
-    }
-}
-
-# gets template name
-# returns array of page names
-function Get-PagesByTemplate {
-    param (
-        $Template = "xxx",
-        $namespace = "1"
-    )
-    $URL = "http://ru.wikipedia.org/w/api.php?action=query&titles=$Template&prop=transcludedin&tilimit=500&tinamespace=$namespace&format=json"
-    $nextURL = $URL
-    $result = @()
-    while ($nextURL){
-        $rq = Invoke-WebRequest -Uri $nextURL -Method GET
-        $JSONCont = $rq.Content | ConvertFrom-Json
-        #$JSONCont.query.pages.3975406
-        $pageID = @($JSONCont.query.pages.PSObject.Properties)[0].Name
-        $pageInfo = $JSONCont.query.pages.$pageID
-        #$pageInfo.transcludedin | select -First 5
-        #$JSONCont.continue
-        $nextSuffix = $JSONCont.continue.ticontinue
-        foreach ($title in $pageInfo.transcludedin.title) {
-            if ($namespace -eq 1) {
-                $result += $title -replace "Обсуждение:",""
-            } else {
-                $result += $title
-            }
-        }
-        # Write-Host "$Template`: $($pageInfo.transcludedin.Count) pages retrieved, $($result.Count) in total."
-        if ($JSONCont.continue){
-            $nextURL = "$URL&ticontinue=$nextSuffix"
-        } else {
-            $nextURL = $null
-            #"No continue, breaking the loop"
-        }
-    }
-    return $result
-}
-
-# Returns an object for $problemStats array
-function New-ProblemStat {
-    param (
-        $name = "(not set)",
-        $counter = "0",
-        $text = "(not set)",
-        $total = 1
-    )
-    $newProblemStat = "" | select `
-        @{n='name';e={$name}},
-        @{n='text';e={$text}},
-        @{n='counter';e={"<!-- statValue:$name -->$counter"}},
-        @{n='percent';e={"<!-- statPercent:$name -->$($([Math]::Round(100*$counter/$total,2))) %`n"}}
-    return $newProblemStat
-}
+. "$PSScriptRoot/functions.ps1"
 
 ### Get project page names ###
 
+<#
 $area = "Belarus"
 $area = "Tatarstan"
 $area = "Israel"
@@ -125,48 +15,49 @@ $area = "Vologda"
 $area = "SverdlovskObl"
 $area = "Karelia"
 #$area = "Football"
-#$area = "Vietnam"
+$area = "Vietnam"
+#>
 
-# default values
+## default values ##
+
+# checks
 $checkCiteWeb = $true
 $checkDirectWebarchive = $true
 $communesSearch = $false
+# do not work on these pages
 $excludePages = @()
+# output
 $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
+# performance optimizations
+$removeEasternNames = $false # replacing eastern names has no sence in this context
+
+## custom values
 
 if ($area -like "Vologda"){
-    "INFO: working on VOLOGDA" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Вологда"
     $outputfile = "C:\Users\Dm\Desktop\wp\vologda-badlinks.txt"
 } elseif ($area -like "Vietnam") {
-    "INFO: working on VIET NAM" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Вьетнам" 
     $outputfile = "C:\Users\Dm\Desktop\wp\viet-badlinks.txt"
     $communesSearch = $true
 } elseif ($area -like "Holocaust") {
-    "INFO: working on HOLOCAUST" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Холокост"
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
 } elseif ($area -like "Belarus") {
-    "INFO: working on BELARUS" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Белоруссия"
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
     $excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "Israel") {
-    "INFO: working on ISRAEL" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Израиль"
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
     #$excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "SverdlovskObl") {
-    "INFO: working on SVERDLOVSKAYA OBL." | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Свердловская область"
 } elseif ($area -like "Tatarstan") {
-    "INFO: working on TATARSTAN" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Татарстан"
-    $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-tatarstan.txt"
     #$checkCiteWeb = $false
     #$checkDirectWebarchive = $false
     #$excludePages = @("Белоруссия/Шапка")
@@ -175,15 +66,15 @@ if ($area -like "Vologda"){
     $projectTemplate = "Шаблон:Статья%20проекта%20Футбол"
     throw "Not ready for almost 30k pages"
 } elseif ($area -like "cybersport") {
-    "INFO: working on CYBERSPORT" | Append-Log
     $projectTemplate = "Шаблон:Статья проекта Киберспорт"
 } elseif ($area -like "Karelia") {
-    "INFO: working on KARELIA" | Append-Log
     $projectTemplate = "Шаблон:Статья проекта Карелия"
 } else {
+    "INFO: Please set variable \$area first!"
     throw "no valid area selected"
 }
 
+"INFO: working on $($area.ToUpper())" | Append-Log
 Start-Sleep -Seconds 5
 
 $vietPages = Get-PagesByTemplate -Template $projectTemplate | where {$_ -notin $excludePages }
@@ -236,8 +127,12 @@ $i = 0
 $startOlolo = Get-Date
 foreach ($page in $vietPagesContent){
     $i++
-    # performange issue here
-    $content = $page.content -replace "{{Восточноазиатское имя[^}]{1,20}}}"
+    if ($removeEasternNames){
+        # performange issue here
+        $content = $page.content -replace "{{Восточноазиатское имя[^}]{1,20}}}"
+    } else {
+        $content = $page.content
+    }
     $mc = [regex]::matches($content, "\[\[[^\|\]\:]{1,255}[\]\|]{1,2}")
     if ($mc.groups.count -gt 0){
         #"== $($page.Title) =="
@@ -296,8 +191,6 @@ $fullAnnounce += "== Оформление ==`n"
 
 ## Неоформленные ссылки ##
 
-#$vietPagesContentOrig = $vietPagesContent
-#$vietPagesContent = $vietPagesContent | where {$_.title -like "Пахнг"}
 $fullAnnounce += "=== Голые ссылки ===`n"
 $nakedCount = 0
 foreach ($page in $vietPagesContent){
@@ -311,12 +204,9 @@ foreach ($page in $vietPagesContent){
     $naked = @()
     $mc = [regex]::matches($page.content, "[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+")
     if ($mc.groups.count -gt 0){
-        #"== $($page.title) =="
         foreach ($m in $mc) {
             $naked += $m.Value
-            #$m.Value
         }
-        #throw "Enough"
     }
     if ( ($seminaked.Count -gt 0) -or ($naked.Count -gt 0) ){
         $fullAnnounce += "[[$($page.Title)]]:`n"
@@ -389,8 +279,8 @@ foreach ($page in $vietPagesContent){
 
 ## Не содержат [[Категория:
 $fullAnnounce += "=== Не указаны категории ===`n"
-$fullAnnounce += "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае категоризирующий"
-$fullAnnounce += "шаблон следует учитывать при составлении этого списка{{sfn|feedback}}.`n"
+$fullAnnounce += "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае категоризирующий "
+$fullAnnounce += "шаблон следует учитывать при составлении этого списка.`n"
 $noCatCounter = 0
 foreach ($page in $vietPagesContent){
     if (($page.Content -notmatch "\[\[Категория\:") -and
@@ -433,14 +323,14 @@ if ($checkDirectWebarchive -eq $true) {
     $fullAnnounce += "Желательно заменить их на [[Ш:cite web]]  параметрами archiveurl и archivedate.`n"
     $cou = 0
     foreach ($page in $vietPagesContent){
-        $mc = [regex]::matches($page.content, "\[http[s]*://web.archive.org[^ ]*")
+        $mc = [regex]::matches($page.content, "\[http[s]*://web.archive.org[^ \]\n]*")
         if ($mc.groups.count -gt 0){
             #Write-Host -ForegroundColor Yellow "$($page.Title) has direct links to web.archive.org ($($mc.groups.count))"
             $fullAnnounce += "* [[$($page.Title)]] ($($mc.groups.count))`n"
             $mc.groups.value -replace "[http[s]*://web.archive.org/web/[0-9]*/","" | % {$fullAnnounce += "** $_`n"}
-            # $mc.groups.value.Count
             $cou++
         }
+        if ($page.title -like "Карельские имена") { throw "Stop here" }
     }
     "$cou pages have direct links to web.archive.org" | Append-Log
     $problemStats += New-ProblemStat -name 'DirectWebarchive' -text 'Прямые ссылки на web.archive.org' `
@@ -468,7 +358,6 @@ foreach ($page in $vietPagesContent){
                 ($m.Value -match "[  ](ж\.д|Inc|M\.E\.P)\.(<|{)"))
             {
                 #"    Skipping: $($m.Value)"
-                #throw "skip"
             } else {
                 $badPreps += $m.Value
             }
@@ -490,7 +379,6 @@ $fullAnnounce += "Использована кострукция <code><nowiki>;�
 $fullAnnounce += "её следует заменить на <code><nowiki>=== Раздел ===</nowiki></code>.`n"
 $cou = 0
 foreach ($page in $vietPagesContent){
-    #$mc = [regex]::matches($page.content, "\[http[s]*://web.archive.org[^ ]*")
     if ($page.Content -match "\n;") {
         $fullAnnounce += "* [[$($page.Title)]]`n"
         $cou++
@@ -847,9 +735,9 @@ $fullAnnounce += "|}`n"
 ### Вывод. Конец ###
 
 $fullAnnounce += "На этом всё.`n"
-$fullAnnounce += ""
-$fullAnnounce += "{{h|feedback||Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].}}`n"
-$fullAnnounce += ""
+$fullAnnounce += "`n"
+$fullAnnounce += "Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].`n"
+$fullAnnounce += "`n"
 $fullAnnounce += "<!-- $(Get-Date) -->`n"
 
 $fullAnnounce > $outputfile
