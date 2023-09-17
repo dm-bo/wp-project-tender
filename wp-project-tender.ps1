@@ -2,6 +2,8 @@
 ### Defining functions ###
 
 . "$PSScriptRoot/functions.ps1"
+. "$PSScriptRoot/wp-functions-aux.ps1"
+. "$PSScriptRoot/wp-functions-checks.ps1"
 
 ### Get project page names ###
 
@@ -35,7 +37,6 @@ $removeEasternNames = $false # replacing eastern names has no sence in this cont
 
 if ($area -like "Vologda"){
     $projectTemplate = "Шаблон:Статья%20проекта%20Вологда"
-    $outputfile = "C:\Users\Dm\Desktop\wp\vologda-badlinks.txt"
 } elseif ($area -like "Vietnam") {
     $projectTemplate = "Шаблон:Статья%20проекта%20Вьетнам" 
     $outputfile = "C:\Users\Dm\Desktop\wp\viet-badlinks.txt"
@@ -70,7 +71,7 @@ if ($area -like "Vologda"){
 } elseif ($area -like "Karelia") {
     $projectTemplate = "Шаблон:Статья проекта Карелия"
 } else {
-    "INFO: Please set variable \$area first!"
+    "INFO: Please set variable `$area first!"
     throw "no valid area selected"
 }
 
@@ -232,6 +233,9 @@ foreach ($page in $vietPagesContent){
         ($page.Content -notmatch "{{IMDb name\|") -and
         ($page.Content -notmatch "{{Шахматные ссылки[ \n]*\|") -and
         ($page.Content -notmatch "{{ЭЕЭ[ \n]*\|") -and
+        ($page.Content -notmatch "{{MacTutor Biography[ \n]*\|") -and
+        ($page.Content -notmatch "{{Сотрудник РАН[ \n]*\|") -and
+        ($page.Content -notmatch "{{Math-Net.ru[ \n]*\|") -and
         ($page.Content -notmatch "{{oopt.aari.ru[ \n]*\|") -and
         ($page.Content -notmatch "{{Warheroes[ \n]*\|"))
     {
@@ -330,7 +334,7 @@ if ($checkDirectWebarchive -eq $true) {
             $mc.groups.value -replace "[http[s]*://web.archive.org/web/[0-9]*/","" | % {$fullAnnounce += "** $_`n"}
             $cou++
         }
-        if ($page.title -like "Карельские имена") { throw "Stop here" }
+        # if ($page.title -like "Карельские имена") { throw "Stop here" }
     }
     "$cou pages have direct links to web.archive.org" | Append-Log
     $problemStats += New-ProblemStat -name 'DirectWebarchive' -text 'Прямые ссылки на web.archive.org' `
@@ -375,11 +379,26 @@ $problemStats += New-ProblemStat -name 'SN_PREP' -text 'СН-ПРЕП' `
 
 ## ;Пумпурум — поменять на разделы
 $fullAnnounce += "=== ;Недоразделы ===`n"
-$fullAnnounce += "Использована кострукция <code><nowiki>;Раздел</nowiki></code>. Скорее всего, "
-$fullAnnounce += "её следует заменить на <code><nowiki>=== Раздел ===</nowiki></code>.`n"
+$fullAnnounce += "Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, "
+$fullAnnounce += "её следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.`n"
 $cou = 0
 foreach ($page in $vietPagesContent){
-    if ($page.Content -match "\n;") {
+    $pageSections = Get-WPPageSections -content $page.content
+    <#
+    # for testing purposes
+    "== $($page.title) =="
+    foreach ($s in $pageSections){
+        " "*$s.level + $s.name
+    }
+    $pageSections[2] | fl
+    #>
+    $hasSemi = $false
+    foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания"})){
+        if ($section.content -match "\n;") {
+            $hasSemi = $true
+        }
+    }
+    if ($hasSemi){
         $fullAnnounce += "* [[$($page.Title)]]`n"
         $cou++
     }
@@ -435,6 +454,7 @@ $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | se
 # Архивировано 20220820034353 года.
 # FIXME * [[Отрицание (фильм)]] (  ;   ;   ;   )
 $fullAnnounce += "=== Страницы с неформатными датами в cite web ===`n"
+$fullAnnounce += "Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).`n"
 $poorDatesCounter = 0
 foreach ($page in $vietPagesContent){
     $mc = [regex]::matches($page.content, "{{cite web[^{}]+({{[^}]+}})*[^{}]+}}")
@@ -444,27 +464,24 @@ foreach ($page in $vietPagesContent){
             $nc = [regex]::matches(($m.Value), "\|[ ]*archive[-]*date[ ]*=[ ]*[^\|\n}]*")
             if ($nc.groups.count -eq 1){
                 $archivedate = ($nc.Value -split "=")[1]
+            } else {
+                $archivedate = $null
             }
             $nc2 = [regex]::matches(($m.Value), "\|[ ]*date[ ]*=[ ]*[^\|\n}]*")
             if ($nc.groups.count -eq 1){
                 $date = ($nc2.Value -split "=")[1]
             }
-            if (($archivedate -notmatch "[0-9]{4}-[0-9]{2}-[0-9]{2}") -and ($archivedate -notlike "[ ]*") -and ($archivedate -notlike "")) {
-                #$fullAnnounce += 
-                #"* [[$($page.Title)]] ($archivedate) arcdate`n"
+            if ( -not (Get-WPDateFormat -date $archivedate)) {
                 $badDates += "$archivedate"
             }
-            if (($date -notmatch "[0-9]{4}-[0-9]{2}-[0-9]{2}") -and ($date -notlike "[ ]*") -and ($date -notlike "")) {
+            if ( -not (Get-WPDateFormat -date $date)) {
                 $badDates += "$date"
-                #$fullAnnounce += 
-                #"* [[$($page.Title)]] ($date) date`n"
             }
         }
         if ($badDates.Count -gt 0) {
             $fullAnnounce += "* [[$($page.title)]] ($($badDates -join "; "))`n"
             $poorDatesCounter ++
         }
-        #if ($page.Title -like "Административное деление*") {throw "wait"}
     }
 }
 "$poorDatesCounter pages have poor dates in cite web" | Append-Log
@@ -597,38 +614,16 @@ $problemStats += New-ProblemStat -name "isolated" -text 'Изолированн�
 
 $fullAnnounce += "== Проблемы с контентом и проверяемостью ==`n"
 
-# returns wikicode for a problem list
-function CheckWikipages-Empty {
-    param (
-        $pages = @()
-    )
-    $wikiText = "=== Очень короткие статьи ===`n"
-    $emptyPagesCounter = 0
-    foreach ($page in $pages){
-        if ($page.content -match "{{rq\|[^\}]{0,30}empty[\|}]")
-        {
-            $wikiText += "* [[$($page.title)]]`n"
-            $emptyPagesCounter++
-        }
-    }
-    "$emptyPagesCounter pages are too short" | Append-Log
-    $problemStat = New-ProblemStat -name "Empty" -text 'Очень коротко' `
-         -counter $emptyPagesCounter -total $pages.Count
-    $result = "" | select `
-        @{n='wikitext';e={$wikiText}},
-        @{n='problemstat';e={$problemStat}}
-    return $result
-}
-
+# Очень короткие статьи
 $checkResult = CheckWikipages-Empty -pages $vietPagesContent
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
-
 
 # $fullAnnounce = ""
 $fullAnnounce += "=== Статьи без источников ===`n"
 $fullAnnounce += "Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.`n"
 $noSourcesCount = 0
+$pagesNoSourcesAtAll = @()
 foreach ($page in $vietPagesContent){
     <#
     if (($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
@@ -646,49 +641,22 @@ foreach ($page in $vietPagesContent){
     {
         
     } else {
+        $pagesNoSourcesAtAll += $page.Title
         $fullAnnounce += "* [[$($page.Title)]]`n"
         $noSourcesCount++
     }
 }
-"$noSourcesCount with no sources and no source request" | Append-Log
+"$noSourcesCount with no sources" | Append-Log
 
-# has sources request 
-$fullAnnounce += "=== Страницы с запросом источников ===`n"
-foreach ($page in $vietPagesContent){
-    if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
-         ($page.content -match "{{Нет источников\|") -or
-         ($page.content -match "{{Нет ссылок\|")) -and
-        ($page.Title -notin $pagesNoSourcesAtAll))
-    {
-        $fullAnnounce += "* [[$($page.title)]]`n"
-    }
-}
+# Страницы с запросом источников
+$checkResult = CheckWikipages-SourceRequest -pages $vietPagesContent -pagesNoSourcesAtAll $pagesNoSourcesAtAll
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
-# 
-$fullAnnounce += "=== Недоступные ссылки ===`n"
-$fullAnnounce += "Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.`n"
-foreach ($page in $vietPagesContent){
-    #$mc = [regex]::matches($page.content, "(http[s]*://)[^:]*{{Недоступная ссылка\|[^\}]{0,200}}}|{{Недоступная ссылка}}")
-    $mc = [regex]::matches($page.content, "http[s]*://[^:]*{{Недоступная ссылка\|[^\}]{0,200}}}|{{Недоступная ссылка}}")
-    if ($mc.groups.count -gt 0){
-        $fullAnnounce += "* [[$($page.title)]] ($($mc.groups.count))`n"
-        #""
-        #"== [[$($page.title)]] == "
-        foreach ($m in $mc.Value) {
-            if ($m -match "^[^ \n\|\]{]*"){
-                #$Matches.Values
-                if (($Matches.Values -like "{{Недоступная") -or ($Matches.Values -like "")){
-                    $fullAnnounce += "** (unknown)`n"
-                } else {
-                    $fullAnnounce += "** $($Matches.Values)`n"
-                }
-            } else {
-                throw "bad match"
-            }
-        }
-        #throw "wait"
-    }
-}
+# Недоступные ссылки
+$checkResult = CheckWikipages-LinksUnanvailable -pages $vietPagesContent
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 # rq|renew  
 ## включения через API ##
@@ -719,9 +687,9 @@ $fullAnnounce += "{| class=`"wikitable`"
 |$nakedCount
 |$([Math]::Round(100*$nakedCount/$vietPages.Count,2)) %
 |-
-|Статьи без источников и шаблона об этом
-|$noSoucesRequestCount
-|$([Math]::Round(100*$noSoucesRequestCount/$vietPages.Count,2)) %`n"
+|Статьи без источников
+|$noSourcesCount
+|$([Math]::Round(100*$noSourcesCount/$vietPages.Count,2)) %`n"
 
 foreach ($problem in $problemStats){
     $fullAnnounce += "|-`n"
