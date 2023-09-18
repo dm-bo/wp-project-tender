@@ -36,6 +36,31 @@ function Get-PagesByTemplate {
     return $result
 }
 
+# gets short name
+function Get-PagesByCategory {
+    param (
+        $Category = "xxx"
+    )
+    $URL = "https://ru.wikipedia.org/w/api.php?action=query&cmlimit=500&list=categorymembers&cmtitle=Категория%3A$Category&format=json"
+    $nextURL = $URL
+    while ($nextURL){
+        $i++
+        $rq = Invoke-WebRequest -Uri $nextURL -Method GET
+        $JSONCont = $rq.Content | ConvertFrom-Json
+        $result += $JSONCont.query.categorymembers.title
+        if ($JSONCont.continue){
+            $nextSuffix = $JSONCont.continue.cmcontinue
+            $nextURL = "$URL&cmcontinue=$nextSuffix"
+            #$nextURL
+        } else {
+            $nextURL = $null
+            #"No continue, breaking the loop"
+        }
+        #"$i - $($result.Count), $($JSONCont.query.categorymembers[0])"
+    }
+    return $result
+}
+
 # Returns an object for $problemStats array
 function New-ProblemStat {
     param (

@@ -16,6 +16,9 @@ $area = "Holocaust"
 $area = "Vologda"
 $area = "SverdlovskObl"
 $area = "Karelia"
+$area = "Crimea"
+$area = "Myriad"
+$area = "Astronomy"
 #$area = "Football"
 $area = "Vietnam"
 #>
@@ -33,35 +36,34 @@ $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 # performance optimizations
 $removeEasternNames = $false # replacing eastern names has no sence in this context
 
+# Test: triggering exceptions
+$vietPages = @()
+
 ## custom values
 
 if ($area -like "Vologda"){
-    $projectTemplate = "Шаблон:Статья%20проекта%20Вологда"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort  
 } elseif ($area -like "Vietnam") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Вьетнам" 
-    $outputfile = "C:\Users\Dm\Desktop\wp\viet-badlinks.txt"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort  
     $communesSearch = $true
 } elseif ($area -like "Holocaust") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Холокост"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
 } elseif ($area -like "Belarus") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Белоруссия"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
     $excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "Israel") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Израиль"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
     #$excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "SverdlovskObl") {
     $projectTemplate = "Шаблон:Статья%20проекта%20Свердловская область"
 } elseif ($area -like "Tatarstan") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Татарстан"
-    #$checkCiteWeb = $false
-    #$checkDirectWebarchive = $false
-    #$excludePages = @("Белоруссия/Шапка")
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Football") {
     "WARNING: working on FOOTBALL" | Append-Log
     $projectTemplate = "Шаблон:Статья%20проекта%20Футбол"
@@ -70,6 +72,12 @@ if ($area -like "Vologda"){
     $projectTemplate = "Шаблон:Статья проекта Киберспорт"
 } elseif ($area -like "Karelia") {
     $projectTemplate = "Шаблон:Статья проекта Карелия"
+} elseif ($area -like "Myriad") {
+    $projectTemplate = "Шаблон:10000"
+} elseif ($area -like "Astronomy") {
+    $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
+    $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
+    $vietPagesSO | % { $vietPages += $_ -replace "Обсуждение:" }
 } else {
     "INFO: Please set variable `$area first!"
     throw "no valid area selected"
@@ -78,9 +86,12 @@ if ($area -like "Vologda"){
 "INFO: working on $($area.ToUpper())" | Append-Log
 Start-Sleep -Seconds 5
 
-$vietPages = Get-PagesByTemplate -Template $projectTemplate | where {$_ -notin $excludePages }
-$vietPages = $vietPages | sort
+#$vietPages = Get-PagesByTemplate -Template $projectTemplate | where {$_ -notin $excludePages }
+#$vietPages = $vietPages | sort
 "$($vietPages.Count) page names found." | Append-Log
+if ($vietPages.Count -eq 0){
+    throw "no pages found"
+}
 
 ### Получение контента и состояния патрулирования ###
 
@@ -237,13 +248,14 @@ foreach ($page in $vietPagesContent){
         ($page.Content -notmatch "{{Сотрудник РАН[ \n]*\|") -and
         ($page.Content -notmatch "{{Math-Net.ru[ \n]*\|") -and
         ($page.Content -notmatch "{{oopt.aari.ru[ \n]*\|") -and
-        ($page.Content -notmatch "{{Warheroes[ \n]*\|"))
+        ($page.Content -notmatch "{{Warheroes[ \n]*\|") -and
+        ($page.Content -notmatch "{{SportsReference[ \n]*\|"))
     {
         $fullAnnounce += "* [[$($page.Title)]]`n"
         $noLinksInLinksCounter++
     }
 }
-"$noLinksInLinksCounter pages with no links iIn links section" | Append-Log
+"$noLinksInLinksCounter pages with no links in links section" | Append-Log
 
 # Статьи без примечаний в разделе "Примечания"
 $fullAnnounce += "=== Статьи без примечаний в разделе «Примечания» ===`n"
@@ -299,7 +311,7 @@ foreach ($page in $vietPagesContent){
         ($page.Content -notmatch "{{Улица Екатеринбурга[ \n]*\|") -and
         ($page.Content -notmatch "{{Карта[ \n]*\|") -and
         ($page.Content -notmatch "{{Культурное наследие народов РФ\|") -and
-        ($page.Content -notmatch "\{\{Вьетнам на Олимпийских играх\}\}")
+        ($page.Content -notmatch "{{Вьетнам на Олимпийских игра}}")
     ) {
         #"WARNING: $($page.Title) has no categories" | Append-Log
         $fullAnnounce += "* [[$($page.Title)]]`n"
@@ -350,7 +362,7 @@ $fullAnnounce += "или <code><nowiki>.{{sfn</nowiki></code>. Сноска до
 $fullAnnounce += "кроме случаев, когда точка является частью сокращения.`n"
 $cou = 0
 foreach ($page in $vietPagesContent){
-    $mc = [regex]::matches($page.content, ".{6}(\.<ref[ >]|\.{{sfn\|)")
+    $mc = [regex]::matches($page.content, ".{6}\.[ ]*(<ref[ >]|{{sfn\|)")
     if ($mc.groups.count -gt 0){
         #$fullAnnounce += 
         $badPreps = @()
@@ -393,7 +405,7 @@ foreach ($page in $vietPagesContent){
     $pageSections[2] | fl
     #>
     $hasSemi = $false
-    foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания"})){
+    foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания|Источники"})){
         if ($section.content -match "\n;") {
             $hasSemi = $true
         }
@@ -453,6 +465,7 @@ $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | se
 
 # Архивировано 20220820034353 года.
 # FIXME * [[Отрицание (фильм)]] (  ;   ;   ;   )
+# Vinfast 2 October 2018 - false negative
 $fullAnnounce += "=== Страницы с неформатными датами в cite web ===`n"
 $fullAnnounce += "Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).`n"
 $poorDatesCounter = 0
@@ -619,18 +632,12 @@ $checkResult = CheckWikipages-Empty -pages $vietPagesContent
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
-# $fullAnnounce = ""
+# no sources
 $fullAnnounce += "=== Статьи без источников ===`n"
 $fullAnnounce += "Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.`n"
 $noSourcesCount = 0
 $pagesNoSourcesAtAll = @()
 foreach ($page in $vietPagesContent){
-    <#
-    if (($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
-        ($page.content -match "{{Нет источников\|") -or
-        ($page.content -match "{{Нет ссылок\|") -or
-        ($page.Content -match "{{список однофамильцев}}")){
-    #>
     if (($page.Content -match "<ref") -or
         ($page.Content -match "{{sfn\|") -or
         ($page.Content -match "==[ ]*Ссылки[ ]*==") -or
@@ -665,6 +672,7 @@ foreach ($badTemplate in $badTemplates) {
     $templatedPages = Get-PagesByTemplate -Template "$badTemplate" -namespace 0
     $fullAnnounce += "=== Страницы с шаблоном [[$badTemplate|]] ===`n"
     $vietPages | where {$_ -in $templatedPages} | % { $fullAnnounce += "* [[$_]]`n"}
+    "Template $badTemplate processed." | Append-Log
 }
 
 ### Стата ###
