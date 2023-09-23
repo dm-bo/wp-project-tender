@@ -19,6 +19,7 @@ $area = "Karelia"
 $area = "Crimea"
 $area = "Myriad"
 $area = "Astronomy"
+$area = "Bollywood"
 #$area = "Football"
 $area = "Vietnam"
 #>
@@ -35,6 +36,7 @@ $excludePages = @()
 $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 # performance optimizations
 $removeEasternNames = $false # replacing eastern names has no sence in this context
+$printEmptySections = $true
 
 # Test: triggering exceptions
 $vietPages = @()
@@ -51,10 +53,10 @@ if ($area -like "Vologda"){
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
 } elseif ($area -like "Belarus") {
+    $excludePages += @("Белоруссия/Шапка")
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
-    $excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "Israel") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
@@ -78,6 +80,11 @@ if ($area -like "Vologda"){
     $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
     $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
     $vietPagesSO | % { $vietPages += $_ -replace "Обсуждение:" }
+} elseif ($area -like "Bollywood") {
+    #$vietPages = Get-PagesByCategory -Category "Кинематограф Индии"
+    $cats = @("Кинематограф Индии")
+    #throw "not implemented yet"
+    $vietPages = $pags
 } else {
     "INFO: Please set variable `$area first!"
     throw "no valid area selected"
@@ -281,6 +288,11 @@ foreach ($page in $vietPagesContent){
 }
 "$directInterwikiCounter pages with direct interwiki links" | Append-Log
 
+# Ссылки на Википедию
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType WPLinks -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
+
 # <!-- Заголовок добавлен ботом -->
 $fullAnnounce += "=== Заголовок добавлен ботом ===`n"
 $fullAnnounce += "Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki><!-- Заголовок добавлен ботом --></nowiki>''`n"
@@ -355,39 +367,10 @@ if ($checkDirectWebarchive -eq $true) {
     $fullAnnounce += "=== Прямые ссылки на web.archive.org (отключено) ===`n"
 }
 
-## .<ref> — применить СН-ПРЕП
-$fullAnnounce += "=== [[ВП:СН-ПРЕП|СН-ПРЕП]] ===`n"
-$fullAnnounce += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> "
-$fullAnnounce += "или <code><nowiki>.{{sfn</nowiki></code>. Сноска должна стоять перед точкой, "
-$fullAnnounce += "кроме случаев, когда точка является частью сокращения.`n"
-$cou = 0
-foreach ($page in $vietPagesContent){
-    $mc = [regex]::matches($page.content, ".{6}\.[ ]*(<ref[ >]|{{sfn\|)")
-    if ($mc.groups.count -gt 0){
-        #$fullAnnounce += 
-        $badPreps = @()
-        foreach ($m in $mc){
-            if (($m.Value -match "[  ]г.(<|{)") -or 
-                ($m.Value -match "[  ](гг|лл|др|руб|экз|чел|л\. с|н\. э|т\.[  ]д|т\.[  ]п)\.(<|{)") -or 
-                ($m.Value -match "[  ](тыс|млн|долл)\.(<|{)") -or 
-                ($m.Value -match "[  ]([а-яА-Я]{1}\.[  ]{0,1}[а-яА-Я]{1})\.(<|{)") -or 
-                ($m.Value -match "[  ](ж\.д|Inc|M\.E\.P)\.(<|{)"))
-            {
-                #"    Skipping: $($m.Value)"
-            } else {
-                $badPreps += $m.Value
-            }
-        }
-        if ($badPreps.Count -gt 0){
-            # $fullAnnounce += "* $($page.title) ($($badPreps -join ", "))`n"
-            $fullAnnounce += "* [[$($page.title)]]`n"
-            $cou++
-        }
-    }
-}
-"$cou страниц с проблемами СН-ПРЕП" | Append-Log
-$problemStats += New-ProblemStat -name 'SN_PREP' -text 'СН-ПРЕП' `
-    -counter $cou -total $vietPagesContent.Count
+## .<ref> — СН-ПРЕП
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType SNPREP -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 ## ;Пумпурум — поменять на разделы
 $fullAnnounce += "=== ;Недоразделы ===`n"
@@ -396,14 +379,6 @@ $fullAnnounce += "её следует заменить, например, на <
 $cou = 0
 foreach ($page in $vietPagesContent){
     $pageSections = Get-WPPageSections -content $page.content
-    <#
-    # for testing purposes
-    "== $($page.title) =="
-    foreach ($s in $pageSections){
-        " "*$s.level + $s.name
-    }
-    $pageSections[2] | fl
-    #>
     $hasSemi = $false
     foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания|Источники"})){
         if ($section.content -match "\n;") {
@@ -463,120 +438,34 @@ $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | se
   | select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
 "Dates estimated" | Append-Log
 
+# неформатные даты в cite web
 # Архивировано 20220820034353 года.
-# FIXME * [[Отрицание (фильм)]] (  ;   ;   ;   )
-# Vinfast 2 October 2018 - false negative
-$fullAnnounce += "=== Страницы с неформатными датами в cite web ===`n"
-$fullAnnounce += "Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).`n"
-$poorDatesCounter = 0
-foreach ($page in $vietPagesContent){
-    $mc = [regex]::matches($page.content, "{{cite web[^{}]+({{[^}]+}})*[^{}]+}}")
-    if ($mc.groups.count -gt 0){
-        $badDates = @()
-        foreach ($m in $mc){
-            $nc = [regex]::matches(($m.Value), "\|[ ]*archive[-]*date[ ]*=[ ]*[^\|\n}]*")
-            if ($nc.groups.count -eq 1){
-                $archivedate = ($nc.Value -split "=")[1]
-            } else {
-                $archivedate = $null
-            }
-            $nc2 = [regex]::matches(($m.Value), "\|[ ]*date[ ]*=[ ]*[^\|\n}]*")
-            if ($nc.groups.count -eq 1){
-                $date = ($nc2.Value -split "=")[1]
-            }
-            if ( -not (Get-WPDateFormat -date $archivedate)) {
-                $badDates += "$archivedate"
-            }
-            if ( -not (Get-WPDateFormat -date $date)) {
-                $badDates += "$date"
-            }
-        }
-        if ($badDates.Count -gt 0) {
-            $fullAnnounce += "* [[$($page.title)]] ($($badDates -join "; "))`n"
-            $poorDatesCounter ++
-        }
-    }
-}
-"$poorDatesCounter pages have poor dates in cite web" | Append-Log
-$problemStats += New-ProblemStat -name "poorDates" -text 'Неформатные даты в cite web' `
-     -counter $poorDatesCounter -total $vietPagesContent.Count
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType PoorDates -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
-# квадратные километры
-$fullAnnounce += "=== Страницы с кв км или кв. км ===`n"
-$fullAnnounce += "Желательно поменять на км².`n"
-$badSquareKmCounter = 0
-foreach ($page in $vietPagesContent){
-    if (($page.content -match "кв. км") -or
-         ($page.content -match "кв км"))
-    {
-        $fullAnnounce += "* [[$($page.title)]]`n"
-        $badSquareKmCounter++
-    }
-}
-"$badSquareKmCounter pages have bad square kilometers" | Append-Log
-$problemStats += New-ProblemStat -name "badSquareKm" -text 'Содержат кв км или кв. км' `
-     -counter $badSquareKmCounter -total $vietPagesContent.Count
+# плохие квадратные километры
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType BadSquareKm -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 ## Декоммунизация
-if ($communesSearch -eq $true) {
-    $fullAnnounce += "== Декоммунизация ==`n"
-    $fullAnnounce += "Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено.`n"
-    $fullAnnounce += "В ПРО:Вьетнам ''коммуны'' (равно как ''приходы'' и, в большинстве случаев, ''деревни'') следует заменить на ''общины''.`n"
-    $communesCou = 0
-    foreach ($page in $vietPagesContent){
-        $mc = [regex]::matches($page.content, "[^\n ]{0,8}коммун[^\n ]{0,5}")
-        if ($mc.groups.count -gt 0){
-            $commicount = 0
-            foreach ($m in $mc) {
-                if (($m.Value -notlike "*коммуни*") -and
-                    ($m.Value -notlike "*коммунал*") -and
-                    ($m.Value -notlike "*общин*-коммун*"))
-                {
-                    #$m.Value
-                    $commicount++
-                }
-            }
-            if ($commicount -gt 0){
-                $fullAnnounce += "* [[$($page.Title)]] ($($commicount))`n"
-                $communesCou++
-            }
-        }
-    }
-    "$communesCou communes found" | Append-Log
-}
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Communes -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 ### Поиск плохих шаблонов ###
 if ($checkCiteWeb -eq $true) {
     $fullAnnounce += "== Шаблоны оформления ссылок ==`n"
     $fullAnnounce += "Обычно эти шаблоны следует заменить на [[Ш:cite web]], [[Ш:книга]], [[Ш:статья]] или [[Ш:Официальный сайт]].`n"
     
-    ### TODO продолжить стату ###
-
-    ## включения через API ##
-    # Это медленнее
-    $badTemplates = @("Шаблон:Citation", "Шаблон:Cite press release", "Шаблон:PDFlink")
-    foreach ($badTemplate in $badTemplates) {
-        $templatedPages = Get-PagesByTemplate -Template "$badTemplate" -namespace 0
-        $fullAnnounce += "=== Страницы с шаблоном [[$badTemplate|]] ===`n"
-        $vietPages | where {$_ -in $templatedPages} | % { $fullAnnounce += "* [[$_]]`n"}
-    }
-    "Templates over API have been processed" | Append-Log 
-
-    ## Регэкспами ##
-    # Это быстрее
-    $badSlowTemplates = @("Wayback", "webarchive", "Архивировано", "Проверено",
-        "ISBN", "h")
+    $badSlowTemplates = @("Citation", "Cite press release", "PDFlink", "Wayback", "webarchive",
+         "Архивировано", "Проверено", "ISBN", "h")
     foreach ($badSlowTemplate in $badSlowTemplates) {
-        $fullAnnounce += "=== Страницы с шаблоном [[Шаблон:$badSlowTemplate|]] ===`n"
-        $badTemplaneCounter = 0
-        foreach ($page in $vietPagesContent){
-            $mc = [regex]::matches($page.content, "{{$badSlowTemplate\|[^\}]{0,200}}}|{{$badSlowTemplate}}")
-            if ($mc.groups.count -gt 0){
-                $fullAnnounce += "* [[$($page.title)]] ($($mc.groups.count))`n"
-                $badTemplaneCounter++
-            }
-        }
-        "$badSlowTemplate — $badTemplaneCounter" | Append-Log 
+        $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
+             -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
+        $fullAnnounce += $checkResult.wikitext
+        $problemStats += $checkResult.problemstat
     }
 
     $fullAnnounce += "=== Страницы с *icon-шаблонами ===`n"
@@ -608,20 +497,10 @@ if ($checkCiteWeb -eq $true) {
 
 $fullAnnounce += "== Связность ==`n"
 
-## Изолированные статьи ##
-$fullAnnounce += "=== Страницы с шаблоном [[Шаблон:изолированная статья|]] ===`n"
-$fullAnnounce += "В другие статьи Википедии нужно добавить ссылки на эти статьи.`n"
-$isolatedCounter = 0
-foreach ($page in $vietPagesContent){
-    $mc = [regex]::matches($page.content, "{{изолированная статья\|[^\}]{0,200}}}|{{изолированная статья}}")
-    if ($mc.groups.count -gt 0){
-        $fullAnnounce += "* [[$($page.title)]] ($($mc.groups.count))`n"
-        $isolatedCounter++
-    }
-}
-"$isolatedCounter isolated pages" | Append-Log
-$problemStats += New-ProblemStat -name "isolated" -text 'Изолированные' `
-     -counter $isolatedCounter -total $vietPagesContent.Count
+# Изолированные статьи
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Isolated -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 ### Проблемы с источниками ###
 
@@ -655,13 +534,21 @@ foreach ($page in $vietPagesContent){
 }
 "$noSourcesCount with no sources" | Append-Log
 
+<#
+# Статьи без источников
+# not ready to use
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoSources -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
+#>
+
 # Страницы с запросом источников
 $checkResult = CheckWikipages-SourceRequest -pages $vietPagesContent -pagesNoSourcesAtAll $pagesNoSourcesAtAll
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
 # Недоступные ссылки
-$checkResult = CheckWikipages-LinksUnanvailable -pages $vietPagesContent
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType LinksUnanvailable -returnEmpty $printEmptySections
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
@@ -755,16 +642,29 @@ foreach ($page in $vietPagesContent){
 ### UNDER CONSTRUCTION ###
 
 ## [http://en.wikipedia.org/wiki/Dror_Feiler]
+# e. g. Чанфу
 
 ## Примечания без секции
 
-# Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate 
+# Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate
+
+
 
 # это отдельно
 ## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
 
 # too much '{{lang' - write PoC
 
+### Нет карточки
+$templCards = Get-PagesByCategory -Category "Шаблоны-карточки по алфавиту"
+$hasCard = $false
+foreach ($page in $vietPagesContent){
+    foreach ($templ in $topLevelTemplates[0..3]) {
+        if ($templ -in $templCards){
+            $hasCard = $true
+        }
+    }
+}
 
 
 ## Bad headers
