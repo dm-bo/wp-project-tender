@@ -90,6 +90,33 @@ function CheckWikipages-Communes-Single {
     }
 }
 
+
+# returns wikicode for a problem list
+function CheckWikipages-DirectInterwikis-Single {
+    param (
+        $page = ""
+    )
+    if ($page.Content -match "\[\[\:[a-z]{2,3}\:[^\:]*\]\]")
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
+function CheckWikipages-Empty-Single {
+    param (
+        $page = ""
+    )
+    if ($page.content -match "{{rq\|[^\}]{0,30}empty[\|}]")
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
 # returns wikicode for a problem list
 function CheckWikipages-Isolated-Single {
     param (
@@ -152,6 +179,59 @@ function CheckWikipages-LinksUnanvailable-Single {
     }
 
     return $wikiText
+}
+
+# returns wikicode for a problem list
+function CheckWikipages-NoCats-Single {
+    param (
+        $page = ""
+    )
+    if (($page.Content -notmatch "\[\[Категория\:") -and
+        ($page.Content -notmatch "{{кинорежиссёр\|") -and
+        ($page.Content -notmatch "{{сценарист\|") -and
+        ($page.Content -notmatch "{{певица\|") -and
+        ($page.Content -notmatch "{{актриса\|") -and
+        ($page.Content -notmatch "{{историк\|") -and
+        ($page.Content -notmatch "{{археолог\|") -and
+        ($page.Content -notmatch "{{список однофамильцев}}") -and
+        ($page.Content -notmatch "{{Мосты Вологды}}") -and
+        ($page.Content -notmatch "{{Улица Екатеринбурга[ \n]*\|") -and
+        ($page.Content -notmatch "{{Карта[ \n]*\|") -and
+        ($page.Content -notmatch "{{Культурное наследие народов РФ\|") -and
+        ($page.Content -notmatch "{{Вьетнам на Олимпийских игра}}")
+    ) {
+        return "* [[$($page.Title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
+function CheckWikipages-NoLinksInLinks-Single {
+    param (
+        $page = ""
+    )
+    if (($page.Content -notmatch "http[s]{0,1}://") -and ($page.Content -match "==[ ]*Ссылки[ ]*==") -and
+        ($page.Content -notmatch "{{ВС}}") -and ($page.Content -notmatch "{{Ethnologue\|") -and
+        ($page.Content -notmatch "{{WAD\|") -and
+        ($page.Content -notmatch "{{ВТ-ЭСБЕ\|") -and
+        ($page.Content -notmatch "{{IMDb name\|") -and
+        ($page.Content -notmatch "{{IMDb title\|") -and
+        ($page.Content -notmatch "{{Шахматные ссылки[ \n]*\|") -and
+        ($page.Content -notmatch "{{ЭЕЭ[ \n]*\|") -and
+        ($page.Content -notmatch "{{MacTutor Biography[ \n]*\|") -and
+        ($page.Content -notmatch "{{Сотрудник РАН[ \n]*\|") -and
+        ($page.Content -notmatch "{{Math-Net.ru[ \n]*\|") -and
+        ($page.Content -notmatch "{{oopt.aari.ru[ \n]*\|") -and
+        ($page.Content -notmatch "{{Warheroes[ \n]*\|") -and
+        ($page.Content -notmatch "{{SportsReference[ \n]*\|") -and
+        ($page.Content -notmatch "{{DNB-Portal[ \n]*\|") -and
+        ($page.Content -notmatch "{{DDB[ \n]*\|"))
+    {
+        return "* [[$($page.Title)]]`n"
+    } else {
+        return ""
+    }
 }
 
 # returns wikicode for a problem list
@@ -312,12 +392,25 @@ function CheckWikipages-Router {
         $checkTitle = "Коммуны"
         $wikiDescription = "Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено.`n"
         $wikiDescription += "В ПРО:Вьетнам ''коммуны'' (равно как ''приходы'' и, в большинстве случаев, ''деревни'') следует заменить на ''общины''.`n"
+    } elseif ( $checkType -like "DirectInterwikis" ) {
+        $checkTitle = "Статьи с прямыми интервики-ссылками"
+        $wikiDescription = "Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если она уже есть.`n"
+    } elseif ( $checkType -like "Empty" ) {
+        $checkTitle = "Очень короткие статьи"
+        $wikiDescription = "Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code>.`n"
     } elseif ( $checkType -like "Isolated" ) {
         $checkTitle = "Изолированные статьи"
         $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на эти статьи.`n"
     } elseif ( $checkType -like "LinksUnanvailable" ) {
         $checkTitle = "Недоступные ссылки"
         $wikiDescription = "Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.`n"
+    } elseif ( $checkType -like "NoLinksInLinks" ) {
+        $checkTitle = "Статьи без ссылок в разделе «Ссылки»"
+        $wikiDescription = "Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит переместить в  раздел «Литература».`n"
+    } elseif ( $checkType -like "NoCats" ) {
+        $checkTitle = "Не указаны категории"
+        $wikiDescription = "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае "
+        $wikiDescription += "категоризирующий шаблон следует учитывать при составлении этого списка.`n"
     } elseif ( $checkType -like "NoSources" ) {
         $checkTitle = "Статьи без источников"
         $wikiDescription = "Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.`n"

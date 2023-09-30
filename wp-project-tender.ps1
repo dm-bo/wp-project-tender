@@ -48,10 +48,12 @@ if ($area -like "Vologda"){
 } elseif ($area -like "Vietnam") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort  
     $communesSearch = $true
+    $printEmptySections = $false
 } elseif ($area -like "Holocaust") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
     $checkCiteWeb = $false
     $checkDirectWebarchive = $false
+    $printEmptySections = $false
 } elseif ($area -like "Belarus") {
     $excludePages += @("Белоруссия/Шапка")
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
@@ -63,7 +65,7 @@ if ($area -like "Vologda"){
     $checkDirectWebarchive = $false
     #$excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "SverdlovskObl") {
-    $projectTemplate = "Шаблон:Статья%20проекта%20Свердловская область"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Свердловская область" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Tatarstan") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Football") {
@@ -71,7 +73,7 @@ if ($area -like "Vologda"){
     $projectTemplate = "Шаблон:Статья%20проекта%20Футбол"
     throw "Not ready for almost 30k pages"
 } elseif ($area -like "cybersport") {
-    $projectTemplate = "Шаблон:Статья проекта Киберспорт"
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Karelia") {
     $projectTemplate = "Шаблон:Статья проекта Карелия"
 } elseif ($area -like "Myriad") {
@@ -136,8 +138,6 @@ for ($i=0;$i -lt $batches;$i++){
 $vietPagesContent = $vietPagesContent | sort -Property title
 $stopTimeBatched = (Get-Date) - $startTimeBatched
 "$($vietPagesContent.Count) pages got their content in $([Math]::Round($stopTimeBatched.TotalSeconds)) seconds." | Append-Log
-# save backup for testing
-$vietPagesContentOrig = $vietPagesContent
 $vietPagesContent | where {$_.Content -like ""} | % { "WARNING: no content for $($_.Title)" | Append-Log }
 
 ##### HACK! HACK! HACK! #####
@@ -236,33 +236,10 @@ foreach ($page in $vietPagesContent){
 }
 "$nakedCount pages with naked links" | Append-Log
 
-## Статьи без ссылок или их требования ##
-
 # Статьи без ссылок в разделе "Ссылки"
-$fullAnnounce += "=== Статьи без ссылок в разделе «Ссылки» ===`n"
-$fullAnnounce += "Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит переместить в  раздел «Литература».`n"
-$noLinksInLinksCounter = 0
-foreach ($page in $vietPagesContent){
-    $good = $false
-    if (($page.Content -notmatch "http[s]{0,1}://") -and ($page.Content -match "==[ ]*Ссылки[ ]*==") -and
-        ($page.Content -notmatch "{{ВС}}") -and ($page.Content -notmatch "{{Ethnologue\|") -and
-        ($page.Content -notmatch "{{WAD\|") -and
-        ($page.Content -notmatch "{{ВТ-ЭСБЕ\|") -and
-        ($page.Content -notmatch "{{IMDb name\|") -and
-        ($page.Content -notmatch "{{Шахматные ссылки[ \n]*\|") -and
-        ($page.Content -notmatch "{{ЭЕЭ[ \n]*\|") -and
-        ($page.Content -notmatch "{{MacTutor Biography[ \n]*\|") -and
-        ($page.Content -notmatch "{{Сотрудник РАН[ \n]*\|") -and
-        ($page.Content -notmatch "{{Math-Net.ru[ \n]*\|") -and
-        ($page.Content -notmatch "{{oopt.aari.ru[ \n]*\|") -and
-        ($page.Content -notmatch "{{Warheroes[ \n]*\|") -and
-        ($page.Content -notmatch "{{SportsReference[ \n]*\|"))
-    {
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $noLinksInLinksCounter++
-    }
-}
-"$noLinksInLinksCounter pages with no links in links section" | Append-Log
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoLinksInLinks -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 # Статьи без примечаний в разделе "Примечания"
 $fullAnnounce += "=== Статьи без примечаний в разделе «Примечания» ===`n"
@@ -277,16 +254,9 @@ foreach ($page in $vietPagesContent){
 "$noRefsCounter pages with no refs in References section" | Append-Log
 
 # Статьи с прямыми интервики-ссылками
-$fullAnnounce += "=== Статьи с прямыми интервики-ссылками ===`n"
-$fullAnnounce += "Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если она уже есть.`n"
-$directInterwikiCounter = 0
-foreach ($page in $vietPagesContent){
-    if ($page.Content -match "\[\[\:[a-z]{2,3}\:[^\:]*\]\]"){
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $directInterwikiCounter++
-    }
-}
-"$directInterwikiCounter pages with direct interwiki links" | Append-Log
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType DirectInterwikis -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 # Ссылки на Википедию
 $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType WPLinks -returnEmpty $printEmptySections
@@ -306,31 +276,9 @@ foreach ($page in $vietPagesContent){
 "$botTitleCounter pages with bot-added link titles" | Append-Log
 
 ## Не содержат [[Категория:
-$fullAnnounce += "=== Не указаны категории ===`n"
-$fullAnnounce += "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае категоризирующий "
-$fullAnnounce += "шаблон следует учитывать при составлении этого списка.`n"
-$noCatCounter = 0
-foreach ($page in $vietPagesContent){
-    if (($page.Content -notmatch "\[\[Категория\:") -and
-        ($page.Content -notmatch "{{кинорежиссёр\|") -and
-        ($page.Content -notmatch "{{сценарист\|") -and
-        ($page.Content -notmatch "{{певица\|") -and
-        ($page.Content -notmatch "{{актриса\|") -and
-        ($page.Content -notmatch "{{историк\|") -and
-        ($page.Content -notmatch "{{археолог\|") -and
-        ($page.Content -notmatch "{{список однофамильцев}}") -and
-        ($page.Content -notmatch "{{Мосты Вологды}}") -and
-        ($page.Content -notmatch "{{Улица Екатеринбурга[ \n]*\|") -and
-        ($page.Content -notmatch "{{Карта[ \n]*\|") -and
-        ($page.Content -notmatch "{{Культурное наследие народов РФ\|") -and
-        ($page.Content -notmatch "{{Вьетнам на Олимпийских игра}}")
-    ) {
-        #"WARNING: $($page.Title) has no categories" | Append-Log
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $noCatCounter++
-    }
-}
-"$noCatCounter pages have no categories" | Append-Log
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoCats -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
 
 ## Direct links to Google books
 $fullAnnounce += "=== Прямые ссылки на Google books ===`n"
@@ -363,11 +311,10 @@ if ($checkDirectWebarchive -eq $true) {
     "$cou pages have direct links to web.archive.org" | Append-Log
     $problemStats += New-ProblemStat -name 'DirectWebarchive' -text 'Прямые ссылки на web.archive.org' `
         -counter $cou -total $vietPagesContent.Count
-} else {
-    $fullAnnounce += "=== Прямые ссылки на web.archive.org (отключено) ===`n"
 }
 
 ## .<ref> — СН-ПРЕП
+# TODO add smth[ ]*<ref
 $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType SNPREP -returnEmpty $printEmptySections
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
@@ -426,6 +373,7 @@ $problemStats += New-ProblemStat -name 'tooFewWikilinks' -text 'Мало вну�
 ## Много ссылок на даты
 $fullAnnounce += "=== Статьи с наиболее перевикифицированными датами ===`n"
 $yearLinks = @()
+$chronologies = $vietPagesContent.title | where {$_ -like "Хронология *"}
 foreach ($link in $linksOlolo){
     if (($link.link -match "^[0-9]* год$") -or
         ($link.link -match "^[0-9]* (января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$")){
@@ -435,7 +383,7 @@ foreach ($link in $linksOlolo){
 # $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select -First 20 | select Count,Name
 "$($yearLinks.Count) links to dates" | Append-Log 
 $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
-  | select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
+  | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
 "Dates estimated" | Append-Log
 
 # неформатные даты в cite web
@@ -449,10 +397,11 @@ $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Ba
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
-## Декоммунизация
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Communes -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
+if ($communesSearch) {
+    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Communes -returnEmpty $printEmptySections
+    $fullAnnounce += $checkResult.wikitext
+    $problemStats += $checkResult.problemstat
+}
 
 ### Поиск плохих шаблонов ###
 if ($checkCiteWeb -eq $true) {
@@ -489,8 +438,6 @@ if ($checkCiteWeb -eq $true) {
         }
     }
     "$badTemplaneCounter страниц с Ref-шаблонами" | Append-Log
-} else {
-    $fullAnnounce += "== Шаблоны оформления ссылок (отключено) ==`n"
 }
 
 ### Связность ###
@@ -507,7 +454,8 @@ $problemStats += $checkResult.problemstat
 $fullAnnounce += "== Проблемы с контентом и проверяемостью ==`n"
 
 # Очень короткие статьи
-$checkResult = CheckWikipages-Empty -pages $vietPagesContent
+#$checkResult = CheckWikipages-Empty -pages $vietPagesContent
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Empty -returnEmpty $printEmptySections
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
@@ -552,14 +500,12 @@ $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Li
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
-# rq|renew  
 ## включения через API ##
-$badTemplates = @("Шаблон:Аффилированные источники", "Шаблон:Спам-ссылки", "Шаблон:Обновить")
-foreach ($badTemplate in $badTemplates) {
-    $templatedPages = Get-PagesByTemplate -Template "$badTemplate" -namespace 0
-    $fullAnnounce += "=== Страницы с шаблоном [[$badTemplate|]] ===`n"
-    $vietPages | where {$_ -in $templatedPages} | % { $fullAnnounce += "* [[$_]]`n"}
-    "Template $badTemplate processed." | Append-Log
+foreach ($badSlowTemplate in @("Аффилированные источники", "Спам-ссылки", "Обновить")) {
+    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
+            -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
+    $fullAnnounce += $checkResult.wikitext
+    $problemStats += $checkResult.problemstat
 }
 
 ### Стата ###
@@ -627,17 +573,33 @@ foreach ($page in $vietPagesContent){
     if ($page.Content -match "tr-page.ya"){
         Write-Host -ForegroundColor Yellow "$($page.Title) has autotranslated source!"
     }
-    <#
-    if ($page.Content -match ".{16}translat.{16}"){
-        $Matches.Values
-        Write-Host -ForegroundColor Yellow "$($page.Title) has trans!"
-    }
-    if ($page.Content -match ".{16}youtube.{16}"){
-        $Matches.Values
-        Write-Host -ForegroundColor Yellow "$($page.Title) has you!"
-    }
-    #>
 }
+
+# Милок (уезд) {{{...}}}
+$cards = Get-PagesByCategory "Шаблоны-карточки по алфавиту"
+$cardNames = $cards | % {$_ -replace "Шаблон:"}
+$cardNamesLocal = @("Военное подразделение", "вооруженный конфликт", "Book", "Битва",
+    "Государственный деятель2", "Военный", "Университет", "Яз-группа", "Католическая епархия",
+    "Infobox company", "АЕ", "Народ")
+<#
+$pageTitle = "Милок (уезд)"
+$URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=flagged%7Crevisions&formatversion=2&rvprop=content&rvslots=*&titles=$pageTitle"
+$rq = Invoke-WebRequest -Uri $URL -Method GET
+$JSONCont = $rq.Content | ConvertFrom-Json
+$content = $JSONCont.query.pages.revisions.slots.main.content
+#>
+foreach ($page in $vietPagesContent){
+    # $templateNames = Get-WPPageTemplates -pageContent $content
+    $templateNames = Get-WPPageTemplates -pageContent $page.content
+    if ((($templateNames | ? {($_ -in $cardNames) -or ($_ -in $cardNamesLocal)}).count -eq 0) -and
+        (($templateNames | ? {$_ -like "Карточка *"}).Count -eq 0)) {
+        "* [[$($page.Title)]] (possibly $($templateNames[0]) | $($templateNames[1]) | $($templateNames[$templateNames.Count-1])) ``n"
+        # throw "no card (possibly $($templateNames[$templateNames.Count-1]))"
+    }
+}
+#$cardNames | where { $_ -like "Военное*" }
+#$templateNames[$templateNames.Count-1] -in $cardNames
+#$Bytes = [system.Text.Encoding]::UTF8.GetBytes($templateNames[9])
 
 ### UNDER CONSTRUCTION ###
 
@@ -648,12 +610,16 @@ foreach ($page in $vietPagesContent){
 
 # Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate
 
+# 1.564.400
 
+# {{l6e|en}}
 
 # это отдельно
 ## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
 
 # too much '{{lang' - write PoC
+
+# cite news
 
 ### Нет карточки
 $templCards = Get-PagesByCategory -Category "Шаблоны-карточки по алфавиту"

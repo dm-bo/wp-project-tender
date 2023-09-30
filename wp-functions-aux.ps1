@@ -41,6 +41,7 @@ function Get-PagesByCategory {
     param (
         $Category = "xxx"
     )
+    $result = @()
     $URL = "https://ru.wikipedia.org/w/api.php?action=query&cmlimit=500&list=categorymembers&cmtitle=Категория%3A$Category&format=json"
     $nextURL = $URL
     while ($nextURL){
@@ -104,6 +105,69 @@ function Get-WPPageSections {
     }
     return $pageSections
 
+}
+
+# gets only content as string
+# returns hashtable or list of names
+function Get-WPPageTemplates {
+    param (
+        $pageContent = "",
+        $returnWhat = "names"
+    )
+    $pageContent = $pageContent -replace "{{{!}}" -replace "{{!}}}"
+    $pageContent = $pageContent -replace "{{{[^}]*}}}"
+    #$pageContent | Append-Log
+    $depth_limit = 10
+    $templates = @{}
+    $templateNames = @()
+    $i = 0
+    $searchMore = $true
+    while ($searchMore){
+        $i++
+        #""
+        #"=== ITERATION $i ===" | Append-Log
+        #""
+        $mc = [regex]::matches($pageContent, "{{[^\{}]*}}")
+        #$content | Append-Log
+        #"$($mc.groups.count) lowest-level templates" | Append-Log 
+        if ($mc.groups.count -gt 0){
+            #"$($mc.groups.count) lowest-level templates" | Append-Log
+            foreach ($m in $mc){
+                #"Next value is $($m) ($($m.Value.Length))"
+                $templ_guid = New-Guid 
+                $templateName = (($m -split '\|' )[0] -replace "{{" -replace "}}" -replace "\n").Trim()
+                #"Next template is $templ_name ($($m.Value.Length))"
+                #$m | fl *
+                #$pageContent = $pageContent -replace $m.Value
+                $pageContent = $pageContent -replace "$([regex]::Escape($m.Value))","__TWH=$templ_guid`_"
+                $templates["$templ_guid"] = "" | select `
+                    @{n="title";e={($m -split '\|' )[0] -replace "{{" -replace "}}" -replace "\n"}},
+                    @{n="content";e={[regex]::Escape($m.Value)}}
+                $templateNames += $templateName
+                #$content.Length
+                if ($pageContent -match [regex]::Escape("<ref>|url=")){
+                    throw "bad replace"
+                }
+            }
+        } else {
+            #"Break when completed." | Append-Log
+            $searchMore = $false
+        }
+        if ($i -ge $depth_limit){
+            #"Break by limit." | Append-Log
+            $searchMore = $false
+        }
+        #$pageContent | Append-Log
+    }
+    #"Returning $($templates.Count) templates, $($templateNames.Count) template names" | Append-Log
+    #return $templates,$templateNames
+    if ($returnWhat -like "names") {
+        return $templateNames
+    } elseif ($returnWhat -like "hash") {
+        return $templates
+    } else {
+        throw "unknown returnWhat value: $returnWhat"
+    }
 }
 
 # gets date as a string
