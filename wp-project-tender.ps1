@@ -27,6 +27,7 @@ $area = "Vietnam"
 ## default values ##
 
 # checks
+$checksDisabled = @()
 $checkCiteWeb = $true
 $checkDirectWebarchive = $true
 $communesSearch = $false
@@ -51,8 +52,13 @@ if ($area -like "Vologda"){
     $printEmptySections = $false
 } elseif ($area -like "Holocaust") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
+
     $checkCiteWeb = $false
+    #
     $checkDirectWebarchive = $false
+    #
+    $checksDisabled = @("DirectWebarchive")
+
     $printEmptySections = $false
 } elseif ($area -like "Belarus") {
     $excludePages += @("Белоруссия/Шапка")
@@ -189,6 +195,9 @@ $spentOlolo = (Get-Date) - $startOlolo
 $problemStats = @()
 $fullAnnounce = ""
 
+$problemStats2 = @{}
+$fullAnnounce2 = @{}
+
 ### Не отпатрулированные статьи ###
 
 $fullAnnounce += "== Не отпатрулированные статьи ==`n"
@@ -236,110 +245,26 @@ foreach ($page in $vietPagesContent){
 }
 "$nakedCount pages with naked links" | Append-Log
 
-# Статьи без ссылок в разделе "Ссылки"
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoLinksInLinks -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# Статьи без примечаний в разделе "Примечания"
-$fullAnnounce += "=== Статьи без примечаний в разделе «Примечания» ===`n"
-$fullAnnounce += "Не считает примечания, подтянутые из ВД. В любом случае, было бы неплохо добавить сноски в тело статьи.`n"
-$noRefsCounter = 0
-foreach ($page in $vietPagesContent){
-    if (($page.Content -notmatch "<ref") -and ($page.Content -notmatch "{{sfn") -and ($page.Content -match "==[ ]*Примечания[ ]*==")){
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $noRefsCounter++
-    }
+#### New Age checks ####
+$checkNames = @(
+    "NoLinksInLinks",     # Статьи без ссылок в разделе "Ссылки"
+    "NoRefs",             # Статьи без примечаний в разделе "Примечания"
+    "DirectInterwikis",   # Статьи с прямыми интервики-ссылками
+    "WPLinks",            # Ссылки на Википедию
+    "BotTitles",          # <!-- Заголовок добавлен ботом -->
+    "NoCats",             # Не содержат [[Категория:
+    "DirectGoogleBooks",  # Direct links to Google books
+    "DirectWebarchive",   # [web.archive
+    "SNPREP",             # .<ref | .{{sfn — СН-ПРЕП
+    "SemicolonSections"   # ;Пумпурум — поменять на разделы
+    )
+foreach ($checkName in @($checkNames | ? {$_ -notin $checksDisabled} )){
+    $fullAnnounce2[$checkName], $problemStats2[$checkName] = CheckWikipages-Router `
+            -checkPages $vietPagesContent -checkType $checkName `
+            -returnEmpty $printEmptySections -returnModeVersion 2
+    $fullAnnounce += $fullAnnounce2[$checkName]
+    $problemStats += $problemStats2[$checkName]
 }
-"$noRefsCounter pages with no refs in References section" | Append-Log
-
-# Статьи с прямыми интервики-ссылками
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType DirectInterwikis -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# Ссылки на Википедию
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType WPLinks -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# <!-- Заголовок добавлен ботом -->
-$fullAnnounce += "=== Заголовок добавлен ботом ===`n"
-$fullAnnounce += "Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki><!-- Заголовок добавлен ботом --></nowiki>''`n"
-$botTitleCounter = 0
-foreach ($page in $vietPagesContent){
-    if ($page.Content -match "<!-- Заголовок добавлен ботом -->") {
-        $fullAnnounce += "* [[$($page.title)]]`n"
-        $botTitleCounter++
-    }
-}
-"$botTitleCounter pages with bot-added link titles" | Append-Log
-
-## Не содержат [[Категория:
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoCats -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-## Direct links to Google books
-$fullAnnounce += "=== Прямые ссылки на Google books ===`n"
-$fullAnnounce += "Их желательно поменять на [[Шаблон:книга]].`n"
-$linkToGoogleBooksCounter = 0
-foreach ($page in $vietPagesContent){
-    $good = $false
-    if ($page.Content -match "\[http[s]\:\/\/books\.google\.") {
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $linkToGoogleBooksCounter++
-    }
-}
-"$linkToGoogleBooksCounter pages with direct links to Google books" | Append-Log
-
-# [web.archive
-if ($checkDirectWebarchive -eq $true) {
-    $fullAnnounce += "=== Прямые ссылки на web.archive.org ===`n"
-    $fullAnnounce += "Желательно заменить их на [[Ш:cite web]]  параметрами archiveurl и archivedate.`n"
-    $cou = 0
-    foreach ($page in $vietPagesContent){
-        $mc = [regex]::matches($page.content, "\[http[s]*://web.archive.org[^ \]\n]*")
-        if ($mc.groups.count -gt 0){
-            #Write-Host -ForegroundColor Yellow "$($page.Title) has direct links to web.archive.org ($($mc.groups.count))"
-            $fullAnnounce += "* [[$($page.Title)]] ($($mc.groups.count))`n"
-            $mc.groups.value -replace "[http[s]*://web.archive.org/web/[0-9]*/","" | % {$fullAnnounce += "** $_`n"}
-            $cou++
-        }
-        # if ($page.title -like "Карельские имена") { throw "Stop here" }
-    }
-    "$cou pages have direct links to web.archive.org" | Append-Log
-    $problemStats += New-ProblemStat -name 'DirectWebarchive' -text 'Прямые ссылки на web.archive.org' `
-        -counter $cou -total $vietPagesContent.Count
-}
-
-## .<ref> — СН-ПРЕП
-# TODO add smth[ ]*<ref
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType SNPREP -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-## ;Пумпурум — поменять на разделы
-$fullAnnounce += "=== ;Недоразделы ===`n"
-$fullAnnounce += "Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, "
-$fullAnnounce += "её следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.`n"
-$cou = 0
-foreach ($page in $vietPagesContent){
-    $pageSections = Get-WPPageSections -content $page.content
-    $hasSemi = $false
-    foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания|Источники"})){
-        if ($section.content -match "\n;") {
-            $hasSemi = $true
-        }
-    }
-    if ($hasSemi){
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $cou++
-    }
-}
-"$cou страниц с ;Недоразделами" | Append-Log
-$problemStats += New-ProblemStat -name 'SemicolonSections' -text ';Недоразделы' `
-    -counter $cou -total $vietPagesContent.Count
 
 ## Нет ссылок
 $fullAnnounce += "=== Мало внутренних ссылок ===`n"
@@ -500,7 +425,7 @@ $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Li
 $fullAnnounce += $checkResult.wikitext
 $problemStats += $checkResult.problemstat
 
-## включения через API ##
+# Шаблоны проблем с контентом 
 foreach ($badSlowTemplate in @("Аффилированные источники", "Спам-ссылки", "Обновить")) {
     $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
             -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate

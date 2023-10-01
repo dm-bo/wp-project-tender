@@ -66,10 +66,26 @@ function CheckWikipages-BadSquareKm-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-BotTitles-Single {
+    param (
+        $page = ""
+    )
+    if ($page.Content -match "<!-- Заголовок добавлен ботом -->")
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-Communes-Single {
     param (
         $page = ""
     )
+    if ($page.title -in @("Пиньо де Беэн, Пьер")){
+        return ""
+    }
     $mc = [regex]::matches($page.content, "[^\n ]{0,8}коммун[^\n ]{0,5}")
     if ($mc.groups.count -gt 0){
         $commicount = 0
@@ -90,6 +106,18 @@ function CheckWikipages-Communes-Single {
     }
 }
 
+# returns wikicode for a problem list
+function CheckWikipages-DirectGoogleBooks-Single {
+    param (
+        $page = ""
+    )
+    if ($page.Content -match "\[http[s]*\:\/\/books\.google\.")
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
 
 # returns wikicode for a problem list
 function CheckWikipages-DirectInterwikis-Single {
@@ -99,6 +127,21 @@ function CheckWikipages-DirectInterwikis-Single {
     if ($page.Content -match "\[\[\:[a-z]{2,3}\:[^\:]*\]\]")
     {
         return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
+function CheckWikipages-DirectWebarchive-Single {
+    param (
+        $page = ""
+    )
+    $mc = [regex]::matches($page.content, "\[http[s]*://web.archive.org[^ \]\n]*")
+    if ($mc.groups.count -gt 0){
+        $result = "* [[$($page.Title)]] ($($mc.groups.count))`n"
+        $mc.groups.value -replace "[http[s]*://web.archive.org/web/[0-9]*/","" | % {$result += "** $_`n"}
+        return $result
     } else {
         return ""
     }
@@ -235,6 +278,21 @@ function CheckWikipages-NoLinksInLinks-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-NoRefs-Single {
+    param (
+        $page = ""
+    )
+    if (($page.Content -notmatch "<ref") -and 
+        ($page.Content -notmatch "{{sfn") -and 
+        ($page.Content -match "==[ ]*Примечания[ ]*=="))
+    {
+        return "* [[$($page.Title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-PoorDates-Single {
     param (
         $page = ""
@@ -265,6 +323,25 @@ function CheckWikipages-PoorDates-Single {
         }
     }
     return ""
+}
+
+# returns wikicode for a problem list
+function CheckWikipages-SemicolonSections-Single {
+    param (
+        $page = ""
+    )
+    $pageSections = Get-WPPageSections -content $page.content
+    $hasSemi = $false
+    foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания|Источники"})){
+        if ($section.content -match "\n;") {
+            $hasSemi = $true
+        }
+    }
+    if ($hasSemi){
+        "* [[$($page.Title)]]`n"
+    } else {
+        return ""
+    }
 }
 
 # returns wikicode for a problem list
@@ -380,7 +457,8 @@ function CheckWikipages-Router {
         $checkType = "invalid",
         $returnEmpty = $true,
         # optional
-        $bypassArgument = ""
+        $bypassArgument = "",
+        $returnModeVersion = 1
     )
     # $pages = $vietPagesContent
     $FunctionParameters = @{}
@@ -388,35 +466,51 @@ function CheckWikipages-Router {
     if ( $checkType -like "BadSquareKm" ) {
         $checkTitle = "Страницы с кв км или кв. км"
         $wikiDescription = "Желательно поменять на км².`n"
+    } elseif ( $checkType -like "BotTitles" ) {
+        $checkTitle = "Заголовок добавлен ботом"
+        $wikiDescription = "Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki><!-- Заголовок добавлен ботом --></nowiki>''`n"
     } elseif ( $checkType -like "Communes" ) {
         $checkTitle = "Коммуны"
         $wikiDescription = "Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено.`n"
         $wikiDescription += "В ПРО:Вьетнам ''коммуны'' (равно как ''приходы'' и, в большинстве случаев, ''деревни'') следует заменить на ''общины''.`n"
+    } elseif ( $checkType -like "DirectGoogleBooks" ) {
+        $checkTitle = "Прямые ссылки на Google books"
+        $wikiDescription = "Их желательно поменять на [[Шаблон:книга]].`n"
     } elseif ( $checkType -like "DirectInterwikis" ) {
         $checkTitle = "Статьи с прямыми интервики-ссылками"
         $wikiDescription = "Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если она уже есть.`n"
+    } elseif ( $checkType -like "DirectWebarchive" ) {
+        $checkTitle = "Прямые ссылки на web.archive.org"
+        $wikiDescription = "Желательно заменить их на [[Ш:cite web]] с параметрами archiveurl и archivedate.`n"
     } elseif ( $checkType -like "Empty" ) {
         $checkTitle = "Очень короткие статьи"
         $wikiDescription = "Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code>.`n"
     } elseif ( $checkType -like "Isolated" ) {
         $checkTitle = "Изолированные статьи"
-        $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на эти статьи.`n"
+        $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на акую статью, а потом удалить из неё шаблон об изолированности.`n"
     } elseif ( $checkType -like "LinksUnanvailable" ) {
         $checkTitle = "Недоступные ссылки"
         $wikiDescription = "Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.`n"
-    } elseif ( $checkType -like "NoLinksInLinks" ) {
-        $checkTitle = "Статьи без ссылок в разделе «Ссылки»"
-        $wikiDescription = "Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит переместить в  раздел «Литература».`n"
     } elseif ( $checkType -like "NoCats" ) {
         $checkTitle = "Не указаны категории"
         $wikiDescription = "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае "
         $wikiDescription += "категоризирующий шаблон следует учитывать при составлении этого списка.`n"
+    } elseif ( $checkType -like "NoLinksInLinks" ) {
+        $checkTitle = "Статьи без ссылок в разделе «Ссылки»"
+        $wikiDescription = "Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит переместить в  раздел «Литература».`n"
+    } elseif ( $checkType -like "NoRefs" ) {
+        $checkTitle = "Нет примечаний в разделе «Примечания»"
+        $wikiDescription = "Не считает примечания, подтянутые из ВД. В любом случае, было бы неплохо добавить сноски в тело статьи.`n"
     } elseif ( $checkType -like "NoSources" ) {
         $checkTitle = "Статьи без источников"
         $wikiDescription = "Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.`n"
     } elseif ( $checkType -like "PoorDates" ) {
         $checkTitle = "Неформатные даты в cite web"
         $wikiDescription = "Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).`n"
+    } elseif ( $checkType -like "SemicolonSections" ) {
+        $checkTitle = ";Недоразделы"
+        $wikiDescription = "Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, "
+        $wikiDescription += "её следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.`n"
     } elseif ( $checkType -like "SNPREP" ) {
         $checkTitle = "[[ВП:СН-ПРЕП|СН-ПРЕП]]"
         $wikiDescription += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> "
@@ -454,8 +548,13 @@ function CheckWikipages-Router {
     "$pagesCounter pages: $checkType $bypassArgument" | Append-Log
     $problemStat = New-ProblemStat -name "$checkType $bypassArgument" -text $checkTitle `
          -counter $pagesCounter -total $checkPages.Count
-    $result = "" | select `
-        @{n='wikitext';e={$wikiText}},
-        @{n='problemstat';e={$problemStat}}
-    return $result
+    if ($returnModeVersion -eq 1) {
+        $result = "" | select `
+            @{n='wikitext';e={$wikiText}},
+            @{n='problemstat';e={$problemStat}}
+        return $result
+    } else {
+        #"Returning ver 2" | Append-Log
+        return $wikiText,$problemStat
+    }
 }
