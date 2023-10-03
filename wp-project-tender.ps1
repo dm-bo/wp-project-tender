@@ -217,115 +217,40 @@ foreach ($notpat in ( $notpatrolled | sort -Property pending_since,title )) {
 
 $fullAnnounce += "== Оформление ==`n"
 
-## Неоформленные ссылки ##
-
-$fullAnnounce += "=== Голые ссылки ===`n"
-$nakedCount = 0
-foreach ($page in $vietPagesContent){
-    $seminaked = @()
-    $mc = [regex]::matches($page.content, "\[http[^ ]*\]")
-    if ($mc.groups.count -gt 0){
-        foreach ($m in $mc) {
-            $seminaked += $m
-        }
-    }
-    $naked = @()
-    $mc = [regex]::matches($page.content, "[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+")
-    if ($mc.groups.count -gt 0){
-        foreach ($m in $mc) {
-            $naked += $m.Value
-        }
-    }
-    if ( ($seminaked.Count -gt 0) -or ($naked.Count -gt 0) ){
-        $fullAnnounce += "[[$($page.Title)]]:`n"
-        $seminaked | % { $fullAnnounce += "* <nowiki>$_</nowiki>`n" }
-        $naked | % { $fullAnnounce += "* <nowiki>$_</nowiki>`n" }
-        $nakedCount++
-    }
-}
-"$nakedCount pages with naked links" | Append-Log
 
 #### New Age checks ####
-$checkNames = @(
-    "NoLinksInLinks",     # Статьи без ссылок в разделе "Ссылки"
-    "NoRefs",             # Статьи без примечаний в разделе "Примечания"
-    "DirectInterwikis",   # Статьи с прямыми интервики-ссылками
-    "WPLinks",            # Ссылки на Википедию
-    "BotTitles",          # <!-- Заголовок добавлен ботом -->
-    "NoCats",             # Не содержат [[Категория:
-    "DirectGoogleBooks",  # Direct links to Google books
-    "DirectWebarchive",   # [web.archive
-    "SNPREP",             # .<ref | .{{sfn — СН-ПРЕП
-    "SemicolonSections"   # ;Пумпурум — поменять на разделы
+# Name, Option
+$checkArrs = @(
+    @("NakedLinks",""),         # Голые ссылки
+    @("NoLinksInLinks",""),     # Статьи без ссылок в разделе "Ссылки"
+    @("NoRefs",""),             # Статьи без примечаний в разделе "Примечания"
+    @("DirectInterwikis",""),   # Статьи с прямыми интервики-ссылками
+    @("WPLinks",""),            # Ссылки на Википедию
+    @("BotTitles",""),          # <!-- Заголовок добавлен ботом -->
+    @("NoCats",""),             # Не содержат [[Категория:
+    @("DirectGoogleBooks",""),  # Direct links to Google books
+    @("DirectWebarchive",""),   # [web.archive
+    @("SNPREP",""),             # .<ref | .{{sfn — СН-ПРЕП
+    @("SemicolonSections",""),  # ;Пумпурум — поменять на разделы
+    @("TooFewWikilinks",""),    # Мало внутренних ссылок
+    @("PoorDates",""),          # неформатные даты в cite web (Архивировано 20220820034353 года.)
+    @("BadSquareKm",""),        # плохие квадратные километры
+    @("Communes","")            # Декоммунизация
     )
-foreach ($checkName in @($checkNames | ? {$_ -notin $checksDisabled} )){
+foreach ($checkArr in @($checkArrs | ? {$_[0] -notin $checksDisabled} )){
+    $checkName = $checkArr[0]
+    # FIXME: DO NUT NEED if
+    if ($checkArr[1] -notlike ""){
+            $FuncParams = @{bypassArgument = $checkArr[1]}
+    } else {
+        #"Empty arg" | Append-Log
+    }
     $fullAnnounce2[$checkName], $problemStats2[$checkName] = CheckWikipages-Router `
             -checkPages $vietPagesContent -checkType $checkName `
-            -returnEmpty $printEmptySections -returnModeVersion 2
+            -returnEmpty $printEmptySections -returnModeVersion 2 `
+            $FuncParams
     $fullAnnounce += $fullAnnounce2[$checkName]
     $problemStats += $problemStats2[$checkName]
-}
-
-## Нет ссылок
-$fullAnnounce += "=== Мало внутренних ссылок ===`n"
-$cou = 0
-$toolow = 0.9
-$toohigh = 20
-foreach ($page in $vietPagesContent){
-    $enc = [System.Text.Encoding]::UTF8
-    $enccont = $enc.GetBytes($page.Content)
-    $pageSize = $enccont.Count
-    if ($pageSize -gt 20480) {
-        $mc = [regex]::matches($page.content, "\[\[[^\]:]*\]\]")
-        $linksPerKB = [math]::Round($mc.groups.count / ($pageSize / 1024), 2)
-        if ($linksPerKB -gt $toohigh){
-            $color = "Magenta"
-            Write-Host -ForegroundColor $color "* $linksPerKB — [[$($page.title)]] ($($mc.groups.count)/$pageSize)"
-            $fullAnnounce += "* [[$($page.title)]] ($linksPerKB, $($mc.groups.count)/$pageSize) — а здесь наоборот, слишком много`n"
-        } elseif ($linksPerKB -gt $toolow) {
-            # $color = "Green"
-        } else {
-            $fullAnnounce += "* [[$($page.title)]] ($linksPerKB, $($mc.groups.count)/$pageSize)`n"
-            $cou++
-        }
-        # Write-Host -ForegroundColor $color "* $linksPerKB — [[$($page.title)]] ($($mc.groups.count)/$pageSize)"
-    }
-}
-"$cou pages have too few internal links" | Append-Log
-$problemStats += New-ProblemStat -name 'tooFewWikilinks' -text 'Мало внутренних ссылок' `
-    -counter $cou -total $vietPagesContent.Count
-
-## Много ссылок на даты
-$fullAnnounce += "=== Статьи с наиболее перевикифицированными датами ===`n"
-$yearLinks = @()
-$chronologies = $vietPagesContent.title | where {$_ -like "Хронология *"}
-foreach ($link in $linksOlolo){
-    if (($link.link -match "^[0-9]* год$") -or
-        ($link.link -match "^[0-9]* (января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$")){
-        $yearLinks += $link
-    }
-}
-# $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select -First 20 | select Count,Name
-"$($yearLinks.Count) links to dates" | Append-Log 
-$yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
-  | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
-"Dates estimated" | Append-Log
-
-# неформатные даты в cite web
-# Архивировано 20220820034353 года.
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType PoorDates -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# плохие квадратные километры
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType BadSquareKm -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-if ($communesSearch) {
-    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Communes -returnEmpty $printEmptySections
-    $fullAnnounce += $checkResult.wikitext
-    $problemStats += $checkResult.problemstat
 }
 
 ### Поиск плохих шаблонов ###
@@ -364,6 +289,22 @@ if ($checkCiteWeb -eq $true) {
     }
     "$badTemplaneCounter страниц с Ref-шаблонами" | Append-Log
 }
+
+## Много ссылок на даты
+$fullAnnounce += "=== Статьи с наиболее перевикифицированными датами ===`n"
+$yearLinks = @()
+$chronologies = $vietPagesContent.title | where {$_ -like "Хронология *"}
+foreach ($link in $linksOlolo){
+    if (($link.link -match "^[0-9]* год$") -or
+        ($link.link -match "^[0-9]* (января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$")){
+        $yearLinks += $link
+    }
+}
+# $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select -First 20 | select Count,Name
+"$($yearLinks.Count) links to dates" | Append-Log 
+$yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
+  | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
+"Dates estimated" | Append-Log
 
 ### Связность ###
 
@@ -448,10 +389,6 @@ $fullAnnounce += "{| class=`"wikitable`"
 |Не отпатрулированные статьи
 |$($notpatrolled.Count)
 |$([Math]::Round(100*$notpatrolled.Count/$vietPages.Count,2)) %
-|-
-|Голые ссылки
-|$nakedCount
-|$([Math]::Round(100*$nakedCount/$vietPages.Count,2)) %
 |-
 |Статьи без источников
 |$noSourcesCount

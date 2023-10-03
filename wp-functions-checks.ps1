@@ -225,6 +225,35 @@ function CheckWikipages-LinksUnanvailable-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-NakedLinks-Single {
+    param (
+        $page = ""
+    )
+    $seminaked = @()
+    $mc = [regex]::matches($page.content, "\[http[^ ]*\]")
+    if ($mc.groups.count -gt 0){
+        foreach ($m in $mc) {
+            $seminaked += $m
+        }
+    }
+    $naked = @()
+    $mc = [regex]::matches($page.content, "[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+")
+    if ($mc.groups.count -gt 0){
+        foreach ($m in $mc) {
+            $naked += $m.Value
+        }
+    }
+    if ( ($seminaked.Count -gt 0) -or ($naked.Count -gt 0) ){
+        $result = "* [[$($page.Title)]]:`n"
+        $seminaked | % { $result += "** <nowiki>$_</nowiki>`n" }
+        $naked | % { $result += "** <nowiki>$_</nowiki>`n" }
+        return $result
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-NoCats-Single {
     param (
         $page = ""
@@ -377,10 +406,10 @@ function CheckWikipages-SNPREP-Single {
 function CheckWikipages-TemplateRegexp-Single {
     param (
         $page = "",
-        $checkTemplate = "TemplateExample"
+        $bypassedArgument = "TemplateExample"
     )
     #$checkTemplate = "Ref-en"
-    $RX = "{{$checkTemplate[ \n]*\||{{$checkTemplate[ \n]*}}"
+    $RX = "{{$bypassedArgument[ \n]*\||{{$bypassedArgument[ \n]*}}"
     $RX = [regex]::new($RX,([regex]$RX).Options -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     $mc = $RX.matches($page.content)
     #$mc = [regex]::matches($page.content, "{{$checkTemplate\||{{$checkTemplate}}")
@@ -390,6 +419,33 @@ function CheckWikipages-TemplateRegexp-Single {
         return ""
     }
 }
+
+# returns wikicode for a problem list
+function CheckWikipages-TooFewWikilinks-Single {
+    param (
+        $page = ""
+    )
+    $toolow = 0.9
+    $toohigh = 20
+    $enc = [System.Text.Encoding]::UTF8
+    $enccont = $enc.GetBytes($page.Content)
+    $pageSize = $enccont.Count
+    if ($pageSize -gt 20480) {
+        $mc = [regex]::matches($page.content, "\[\[[^\]:]*\]\]")
+        $linksPerKB = [math]::Round($mc.groups.count / ($pageSize / 1024), 2)
+        if ($linksPerKB -gt $toohigh){
+            return "* [[$($page.title)]] ($linksPerKB, $($mc.groups.count)/$pageSize) — а здесь наоборот, слишком много`n"
+        } elseif ($linksPerKB -gt $toolow) {
+            return ""
+        } else {
+            return "* [[$($page.title)]] ($linksPerKB, $($mc.groups.count)/$pageSize)`n"
+        }
+        # Write-Host -ForegroundColor $color "* $linksPerKB — [[$($page.title)]] ($($mc.groups.count)/$pageSize)"
+    } else {
+        return ""
+    }
+}
+
 
 # returns wikicode for a problem list
 function CheckWikipages-WPLinks-Single {
@@ -487,10 +543,13 @@ function CheckWikipages-Router {
         $wikiDescription = "Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code>.`n"
     } elseif ( $checkType -like "Isolated" ) {
         $checkTitle = "Изолированные статьи"
-        $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на акую статью, а потом удалить из неё шаблон об изолированности.`n"
+        $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на такую статью, а потом удалить из неё шаблон об изолированности.`n"
     } elseif ( $checkType -like "LinksUnanvailable" ) {
         $checkTitle = "Недоступные ссылки"
         $wikiDescription = "Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.`n"
+    } elseif ( $checkType -like "NakedLinks" ) {
+        $checkTitle = "Голые ссылки"
+        $wikiDescription = "Нужно оформить ссылку в [[Ш:cite web]] или, хотя бы, в <code><nowiki>[http://example.com Title]</nowiki></code>.`n"
     } elseif ( $checkType -like "NoCats" ) {
         $checkTitle = "Не указаны категории"
         $wikiDescription = "Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. В таком случае "
@@ -516,9 +575,11 @@ function CheckWikipages-Router {
         $wikiDescription += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> "
         $wikiDescription += "или <code><nowiki>.{{sfn</nowiki></code>. Сноска должна стоять перед точкой, "
         $wikiDescription += "кроме случаев, когда точка является частью сокращения.`n"
+    } elseif ( $checkType -like "TooFewWikilinks" ) {
+        $checkTitle = "Мало внутренних ссылок"
+        $wikiDescription += "Добавьте больше.`n"
     } elseif ( $checkType -like "TemplateRegexp" ) {
-        $checkTitle = "Страницы с шаблоном [[Шаблон:$bypassArgument|]]"
-        $FunctionParameters = @{checkTemplate = $bypassArgument}
+        $checkTitle = "Страницы с шаблоном [[Шаблон:__ARG__|]]"
         $wikiDescription = ""
     } elseif ( $checkType -like "WPLinks" ) {
         $checkTitle = "Ссылки на ВП как внешние"
@@ -527,6 +588,7 @@ function CheckWikipages-Router {
         throw "Unknown check: $checkType"
     }
 
+    $FunctionParameters = @{bypassedArgument = $bypassArgument}
     $checkFunction = "CheckWikipages-$checkType-Single"
     $pagesCounter = 0
     $wikiTextBody = ""
@@ -537,8 +599,9 @@ function CheckWikipages-Router {
         $wikiTextBody += $wikiTextThisPage
     }
 
+    $checkTitleProcessed = $checkTitle -replace "__ARG__",$bypassArgument
     if ( ($pagesCounter -gt 0) -or ($returnEmpty) ){
-        $wikiText = "=== $checkTitle ===`n"
+        $wikiText = "=== $checkTitleProcessed ===`n"
         $wikiText += $wikiDescription
         $wikiText += $wikiTextBody
     } else {
@@ -546,7 +609,7 @@ function CheckWikipages-Router {
     }
 
     "$pagesCounter pages: $checkType $bypassArgument" | Append-Log
-    $problemStat = New-ProblemStat -name "$checkType $bypassArgument" -text $checkTitle `
+    $problemStat = New-ProblemStat -name "$checkType $bypassArgument" -text $checkTitleProcessed `
          -counter $pagesCounter -total $checkPages.Count
     if ($returnModeVersion -eq 1) {
         $result = "" | select `
