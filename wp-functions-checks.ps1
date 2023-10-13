@@ -1,24 +1,4 @@
-﻿# returns wikicode
-function CheckWikipages-SourceRequest-Single {
-    param (
-        $page = @(),
-        $pagesNoSourcesAtAll = @()
-    )
-    # HACK!
-    $pagesNoSourcesAtAll = $global:pagesNoSourcesAtAll
-     
-    if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
-             ($page.content -match "{{Нет источников\|") -or
-             ($page.content -match "{{Нет ссылок\|")) -and
-            ($page.Title -notin $pagesNoSourcesAtAll))
-    {
-        return "* [[$($page.title)]]`n"
-    } else {
-        return ""
-    }
-}
-
-### Single-Page Checks ###
+﻿### Single-Page Checks ###
 
 # returns wikicode for a problem list
 function CheckWikipages-BadSquareKm-Single {
@@ -400,6 +380,27 @@ function CheckWikipages-SNPREP-Single {
     return ""
 }
 
+# returns wikicode
+function CheckWikipages-SourceRequest-Single {
+    param (
+        $page = @(),
+        $pagesNoSourcesAtAll = @()
+    )
+    # HACK!
+    $pagesNoSourcesAtAll = $global:pagesNoSourcesAtAll
+     
+    if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
+             ($page.content -match "{{Нет источников\|") -or
+             ($page.content -match "{{Нет ссылок\|")) -and
+            ($page.Title -notin $pagesNoSourcesAtAll))
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+
 # returns wikicode for a problem list
 function CheckWikipages-TemplateRegexp-Single {
     param (
@@ -461,6 +462,7 @@ function CheckWikipages-WPLinks-Single {
 ### Function that calls other function
 
 # returns wikicode for a problem list
+# Big nasty ad-hoc function, just to move code out of main file quickly
 function CheckWikipages-Router {
     param (
         $checkPages = @(),

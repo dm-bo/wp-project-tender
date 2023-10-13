@@ -39,7 +39,6 @@ $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 $removeEasternNames = $false # replacing eastern names has no sence in this context
 $printEmptySections = $false
 
-# Test: triggering exceptions
 $vietPages = @()
 
 ## custom values
@@ -159,6 +158,7 @@ $stopTimeBatched = (Get-Date) - $startTimeBatched
 $vietPagesContent | where {$_.Content -like ""} | % { "WARNING: no content for $($_.Title)" | Append-Log }
 
 ##### HACK! HACK! HACK! #####
+# FIXME extremely slow
 $linksOlolo = @()
 $i = 0
 $startOlolo = Get-Date
@@ -196,11 +196,11 @@ $spentOlolo = (Get-Date) - $startOlolo
 ### Looking for problems
 #####
 
-$problemStats = @()
 $fullAnnounce = ""
-
 $problemStats2 = @{}
 $fullAnnounce2 = @{}
+
+$pagesNoSourcesAtAll = @()
 
 ### Не отпатрулированные статьи ###
 
@@ -255,43 +255,21 @@ $checkArrs = @(
     @("Isolated",""),
     @("Empty",""),
     @("NoSources", ""),
-    @("SourceRequest", "")
+    @("SourceRequest", ""),
+    @("LinksUnanvailable", ""),
+    @("TemplateRegexp","Аффилированные источники"),
+    @("TemplateRegexp","Спам-ссылки"),
+    @("TemplateRegexp","Обновить")
     )
 foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} )){
     $checkName, $checkArgument = $checkArr
-    $fullAnnounce2[$checkName], $problemStats2[$checkName] = CheckWikipages-Router `
+    $fullAnnounce2["$checkName#$checkArgument"], $problemStats2["$checkName#$checkArgument"] = 
+         CheckWikipages-Router `
             -checkPages $vietPagesContent -checkType $checkName `
             -returnEmpty $printEmptySections -returnModeVersion 2 `
             -bypassArgument $checkArgument #$checkArr[1] #$FuncParams
-    $fullAnnounce += $fullAnnounce2[$checkName]
-    $problemStats += $problemStats2[$checkName]
-}
-
-<#
-$checkArrs = @(
-    @("NoSources", ""),
-    @("SourceRequest", "")
-    )
-#>
-
-<#
-# Страницы с запросом источников
-$checkResult = CheckWikipages-SourceRequest -pages $vietPagesContent -pagesNoSourcesAtAll $pagesNoSourcesAtAll
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-#>
-
-# Недоступные ссылки
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType LinksUnanvailable -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# Шаблоны проблем с контентом 
-foreach ($badSlowTemplate in @("Аффилированные источники", "Спам-ссылки", "Обновить")) {
-    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
-            -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
-    $fullAnnounce += $checkResult.wikitext
-    $problemStats += $checkResult.problemstat
+    $fullAnnounce += $fullAnnounce2["$checkName#$checkArgument"]
+    #$problemStats += $problemStats2[$checkName]
 }
 
 ## Много ссылок на даты
@@ -304,7 +282,6 @@ foreach ($link in $linksOlolo){
         $yearLinks += $link
     }
 }
-# $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select -First 20 | select Count,Name
 "$($yearLinks.Count) links to dates" | Append-Log 
 $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
   | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
@@ -324,12 +301,11 @@ $fullAnnounce += "{| class=`"wikitable`"
 |-
 |Не отпатрулированные статьи
 |$($notpatrolled.Count)
-|$([Math]::Round(100*$notpatrolled.Count/$vietPages.Count,2)) %
-|-
-|Статьи без источников
-|$noSourcesCount
-|$([Math]::Round(100*$noSourcesCount/$vietPages.Count,2)) %`n"
+|$([Math]::Round(100*$notpatrolled.Count/$vietPages.Count,2)) %`n"
 
+# $problemStats2.GetEnumerator() | select -ExpandProperty Value | select Name,text 
+$problemStats = $problemStats2.GetEnumerator() | select -ExpandProperty Value | sort -Property timestamp
+ 
 foreach ($problem in $problemStats){
     $fullAnnounce += "|-`n"
     $fullAnnounce += "|$($problem.text)`n"
@@ -362,16 +338,48 @@ foreach ($page in $vietPagesContent){
     if ($page.Content -match "turbo"){
         Write-Host -ForegroundColor Yellow "$($page.Title) has turbo!"
     }
-    if ($page.Content -match "dzen.ru"){
-        Write-Host -ForegroundColor Yellow "$($page.Title) has dzen!"
-    }
-    if ($page.Content -match "zen.ya"){
-        Write-Host -ForegroundColor Yellow "$($page.Title) has dzen!"
-    }
-    if ($page.Content -match "tr-page.ya"){
-        Write-Host -ForegroundColor Yellow "$($page.Title) has autotranslated source!"
+}
+
+#######
+### UNDER CONSTRUCTION ###
+#######
+
+## Примечания без секции
+
+# Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate
+
+# Ш:rp
+
+# 1.564.400
+
+# {{l6e|en}}
+
+# это отдельно
+## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
+
+# too much '{{lang' - write PoC
+
+# cite news
+
+# <!-- Bot retrieved archive -->
+
+#######
+### EXPERIMENTAL ###
+#######
+
+## Нет карточки ##
+
+$templCards = Get-PagesByCategory -Category "Шаблоны-карточки по алфавиту"
+$hasCard = $false
+foreach ($page in $vietPagesContent){
+    foreach ($templ in $topLevelTemplates[0..3]) {
+        if ($templ -in $templCards){
+            $hasCard = $true
+        }
     }
 }
+
+##
 
 # Милок (уезд) {{{...}}}
 $cards = Get-PagesByCategory "Шаблоны-карточки по алфавиту"
@@ -399,41 +407,10 @@ foreach ($page in $vietPagesContent){
 #$templateNames[$templateNames.Count-1] -in $cardNames
 #$Bytes = [system.Text.Encoding]::UTF8.GetBytes($templateNames[9])
 
-### UNDER CONSTRUCTION ###
 
-## [http://en.wikipedia.org/wiki/Dror_Feiler]
-# e. g. Чанфу
+## Bad headers ##
 
-## Примечания без секции
-
-# Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate
-
-# Ш:rp
-
-# 1.564.400
-
-# {{l6e|en}}
-
-# это отдельно
-## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
-
-# too much '{{lang' - write PoC
-
-# cite news
-
-### Нет карточки
-$templCards = Get-PagesByCategory -Category "Шаблоны-карточки по алфавиту"
-$hasCard = $false
-foreach ($page in $vietPagesContent){
-    foreach ($templ in $topLevelTemplates[0..3]) {
-        if ($templ -in $templCards){
-            $hasCard = $true
-        }
-    }
-}
-
-
-## Bad headers
+# Highly experimental
 # TODO fix strarter ,,, — 
 foreach ($page in $vietPagesContent){
     # $page.Content -notmatch "<ref"
@@ -466,9 +443,6 @@ foreach ($page in $vietPagesContent){
         $page.Content[0..80] -join ""
     }
 }
-
-# <!-- Bot retrieved archive -->
-
 
 
 #######

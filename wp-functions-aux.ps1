@@ -74,7 +74,8 @@ function New-ProblemStat {
         @{n='name';e={$name}},
         @{n='text';e={$text}},
         @{n='counter';e={"<!-- statValue:$name -->$counter"}},
-        @{n='percent';e={"<!-- statPercent:$name -->$($([Math]::Round(100*$counter/$total,2))) %`n"}}
+        @{n='percent';e={"<!-- statPercent:$name -->$($([Math]::Round(100*$counter/$total,2))) %"}},
+        @{n='timestamp';e={Get-Date}}
     return $newProblemStat
 }
 
