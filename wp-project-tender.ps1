@@ -37,7 +37,7 @@ $excludePages = @()
 $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 # performance optimizations
 $removeEasternNames = $false # replacing eastern names has no sence in this context
-$printEmptySections = $true
+$printEmptySections = $false
 
 # Test: triggering exceptions
 $vietPages = @()
@@ -54,10 +54,21 @@ if ($area -like "Vologda"){
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
 
     $checkCiteWeb = $false
-    #
     $checkDirectWebarchive = $false
     #
-    $checksDisabled = @("DirectWebarchive")
+    $checksDisabled = @("DirectWebarchive#",
+        "TemplateRegexp#Citation",
+        "TemplateRegexp#Cite press release",
+        "TemplateRegexp#PDFlink",
+        "TemplateRegexp#Wayback",
+        "TemplateRegexp#webarchive",
+        "TemplateRegexp#Архивировано",
+        "TemplateRegexp#Проверено",
+        "TemplateRegexp#ISBN",
+        "TemplateRegexp#h",
+        "IconTemplates#",
+        "RefTemplates#",
+        "Communes#")
 
     $printEmptySections = $false
 } elseif ($area -like "Belarus") {
@@ -81,7 +92,8 @@ if ($area -like "Vologda"){
 } elseif ($area -like "cybersport") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Karelia") {
-    $projectTemplate = "Шаблон:Статья проекта Карелия"
+    $checksDisabled = @("Communes#")
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Карелия" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Myriad") {
     $projectTemplate = "Шаблон:10000"
 } elseif ($area -like "Astronomy") {
@@ -171,22 +183,14 @@ foreach ($page in $vietPagesContent){
             @{n='page';e={$page.title}}
             # $linksOloloTemp | group -Property link | sort -Descending -Property Count | select Count,Name
         }
-
-        #$linksOlolo += $linksOloloTempNormalized
         $linksOlolo += $linksOloloTemp
     }
-    
     if (([string]$i -like "*00") -or ($i -eq $vietPagesContent.Count)){
         "Extracting wikilinks: $i/$($vietPagesContent.Count) pages processed"
-    }
-    
-    if ($i -gt 40){
-        #break
     }
 }
 $spentOlolo = (Get-Date) - $startOlolo
 "$($linksOlolo.Count) internal links extracted in $([Math]::Round($spentOlolo.TotalSeconds,2)) seconds." | Append-Log
-
 
 #####
 ### Looking for problems
@@ -215,10 +219,11 @@ foreach ($notpat in ( $notpatrolled | sort -Property pending_since,title )) {
 
 ### Оформление ###
 
-$fullAnnounce += "== Оформление ==`n"
-
+$fullAnnounce += "== Недостатки статей ==`n"
 
 #### New Age checks ####
+# Iterate over checklist
+# TODO move Communes to optional
 # Name, Option
 $checkArrs = @(
     @("NakedLinks",""),         # Голые ссылки
@@ -235,59 +240,58 @@ $checkArrs = @(
     @("TooFewWikilinks",""),    # Мало внутренних ссылок
     @("PoorDates",""),          # неформатные даты в cite web (Архивировано 20220820034353 года.)
     @("BadSquareKm",""),        # плохие квадратные километры
-    @("Communes","")            # Декоммунизация
+    @("Communes",""),           # Декоммунизация
+    @("TemplateRegexp","Citation"),
+    @("TemplateRegexp","Cite press release"),
+    @("TemplateRegexp","PDFlink"),
+    @("TemplateRegexp","Wayback"),
+    @("TemplateRegexp","webarchive"),
+    @("TemplateRegexp","Архивировано"),
+    @("TemplateRegexp","Проверено"),
+    @("TemplateRegexp","ISBN"),
+    @("TemplateRegexp","h"),
+    @("IconTemplates", ""),
+    @("RefTemplates",""),
+    @("Isolated",""),
+    @("Empty",""),
+    @("NoSources", ""),
+    @("SourceRequest", "")
     )
-foreach ($checkArr in @($checkArrs | ? {$_[0] -notin $checksDisabled} )){
-    $checkName = $checkArr[0]
-    # FIXME: DO NUT NEED if
-    if ($checkArr[1] -notlike ""){
-            $FuncParams = @{bypassArgument = $checkArr[1]}
-    } else {
-        #"Empty arg" | Append-Log
-    }
+foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} )){
+    $checkName, $checkArgument = $checkArr
     $fullAnnounce2[$checkName], $problemStats2[$checkName] = CheckWikipages-Router `
             -checkPages $vietPagesContent -checkType $checkName `
             -returnEmpty $printEmptySections -returnModeVersion 2 `
-            $FuncParams
+            -bypassArgument $checkArgument #$checkArr[1] #$FuncParams
     $fullAnnounce += $fullAnnounce2[$checkName]
     $problemStats += $problemStats2[$checkName]
 }
 
-### Поиск плохих шаблонов ###
-if ($checkCiteWeb -eq $true) {
-    $fullAnnounce += "== Шаблоны оформления ссылок ==`n"
-    $fullAnnounce += "Обычно эти шаблоны следует заменить на [[Ш:cite web]], [[Ш:книга]], [[Ш:статья]] или [[Ш:Официальный сайт]].`n"
-    
-    $badSlowTemplates = @("Citation", "Cite press release", "PDFlink", "Wayback", "webarchive",
-         "Архивировано", "Проверено", "ISBN", "h")
-    foreach ($badSlowTemplate in $badSlowTemplates) {
-        $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
-             -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
-        $fullAnnounce += $checkResult.wikitext
-        $problemStats += $checkResult.problemstat
-    }
+<#
+$checkArrs = @(
+    @("NoSources", ""),
+    @("SourceRequest", "")
+    )
+#>
 
-    $fullAnnounce += "=== Страницы с *icon-шаблонами ===`n"
-    $badTemplaneCounter = 0
-    foreach ($page in $vietPagesContent){
-        $mc = [regex]::matches($page.content, "{{[a-zA-Z]{2} icon}}")
-        if ($mc.groups.count -gt 0){
-            $fullAnnounce += "* [[$($page.title)]] ($($mc.groups.count))`n"
-            $badTemplaneCounter++
-        }
-    }
-    "$badTemplaneCounter страниц с *icon-шаблонами" | Append-Log
+<#
+# Страницы с запросом источников
+$checkResult = CheckWikipages-SourceRequest -pages $vietPagesContent -pagesNoSourcesAtAll $pagesNoSourcesAtAll
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
+#>
 
-    $fullAnnounce += "=== Страницы с ref-шаблонами ===`n"
-    $badTemplaneCounter = 0
-    foreach ($page in $vietPagesContent){
-        $mc = [regex]::matches($page.content, "{{ref-[a-zA-Z]+\|[^\}]{0,200}}}|{{ref-[a-zA-Z]+}}")
-        if ($mc.groups.count -gt 0){
-            $fullAnnounce += "* [[$($page.title)]] ($($mc.groups.count))`n"
-            $badTemplaneCounter++
-        }
-    }
-    "$badTemplaneCounter страниц с Ref-шаблонами" | Append-Log
+# Недоступные ссылки
+$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType LinksUnanvailable -returnEmpty $printEmptySections
+$fullAnnounce += $checkResult.wikitext
+$problemStats += $checkResult.problemstat
+
+# Шаблоны проблем с контентом 
+foreach ($badSlowTemplate in @("Аффилированные источники", "Спам-ссылки", "Обновить")) {
+    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
+            -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
+    $fullAnnounce += $checkResult.wikitext
+    $problemStats += $checkResult.problemstat
 }
 
 ## Много ссылок на даты
@@ -305,74 +309,6 @@ foreach ($link in $linksOlolo){
 $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
   | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
 "Dates estimated" | Append-Log
-
-### Связность ###
-
-$fullAnnounce += "== Связность ==`n"
-
-# Изолированные статьи
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Isolated -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-### Проблемы с источниками ###
-
-$fullAnnounce += "== Проблемы с контентом и проверяемостью ==`n"
-
-# Очень короткие статьи
-#$checkResult = CheckWikipages-Empty -pages $vietPagesContent
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType Empty -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# no sources
-$fullAnnounce += "=== Статьи без источников ===`n"
-$fullAnnounce += "Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.`n"
-$noSourcesCount = 0
-$pagesNoSourcesAtAll = @()
-foreach ($page in $vietPagesContent){
-    if (($page.Content -match "<ref") -or
-        ($page.Content -match "{{sfn\|") -or
-        ($page.Content -match "==[ ]*Ссылки[ ]*==") -or
-        ($page.Content -match "==[ ]*Литература[ ]*==") -or
-        ($page.Content -match "==[ ]*Источники[ ]*==") -or
-        ($page.Content -match "\{\{IMDb name\|")
-        )
-    {
-        
-    } else {
-        $pagesNoSourcesAtAll += $page.Title
-        $fullAnnounce += "* [[$($page.Title)]]`n"
-        $noSourcesCount++
-    }
-}
-"$noSourcesCount with no sources" | Append-Log
-
-<#
-# Статьи без источников
-# not ready to use
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType NoSources -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-#>
-
-# Страницы с запросом источников
-$checkResult = CheckWikipages-SourceRequest -pages $vietPagesContent -pagesNoSourcesAtAll $pagesNoSourcesAtAll
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# Недоступные ссылки
-$checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType LinksUnanvailable -returnEmpty $printEmptySections
-$fullAnnounce += $checkResult.wikitext
-$problemStats += $checkResult.problemstat
-
-# Шаблоны проблем с контентом 
-foreach ($badSlowTemplate in @("Аффилированные источники", "Спам-ссылки", "Обновить")) {
-    $checkResult = CheckWikipages-Router -checkPages $vietPagesContent -checkType TemplateRegexp `
-            -returnEmpty $printEmptySections -bypassArgument $badSlowTemplate
-    $fullAnnounce += $checkResult.wikitext
-    $problemStats += $checkResult.problemstat
-}
 
 ### Стата ###
 
@@ -471,6 +407,8 @@ foreach ($page in $vietPagesContent){
 ## Примечания без секции
 
 # Ш: Грубый перевод, плохой перевод, недоперевод, Закончить перевод, rq|translate, rq|checktranslate
+
+# Ш:rp
 
 # 1.564.400
 

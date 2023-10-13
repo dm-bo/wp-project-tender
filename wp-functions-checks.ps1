@@ -1,52 +1,21 @@
-﻿
-# returns wikicode for a problem list
-function CheckWikipages-Empty {
+﻿# returns wikicode
+function CheckWikipages-SourceRequest-Single {
     param (
-        $pages = @()
-    )
-    $wikiText = "=== Очень короткие статьи ===`n"
-    $emptyPagesCounter = 0
-    foreach ($page in $pages){
-        if ($page.content -match "{{rq\|[^\}]{0,30}empty[\|}]")
-        {
-            $wikiText += "* [[$($page.title)]]`n"
-            $emptyPagesCounter++
-        }
-    }
-    "$emptyPagesCounter pages are too short" | Append-Log
-    $problemStat = New-ProblemStat -name "Empty" -text 'Очень коротко' `
-         -counter $emptyPagesCounter -total $pages.Count
-    $result = "" | select `
-        @{n='wikitext';e={$wikiText}},
-        @{n='problemstat';e={$problemStat}}
-    return $result
-}
-
-# returns wikicode
-function CheckWikipages-SourceRequest {
-    param (
-        $pages = @(),
+        $page = @(),
         $pagesNoSourcesAtAll = @()
     )
-    $wikiText = "=== Страницы с запросом источников ===`n"
-    $pagesCounter = 0
-    foreach ($page in $pages){
-        if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
+    # HACK!
+    $pagesNoSourcesAtAll = $global:pagesNoSourcesAtAll
+     
+    if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
              ($page.content -match "{{Нет источников\|") -or
              ($page.content -match "{{Нет ссылок\|")) -and
             ($page.Title -notin $pagesNoSourcesAtAll))
-        {
-            $wikiText += "* [[$($page.title)]]`n"
-            $pagesCounter++
-        }
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
     }
-    "$pagesCounter pages have source request" | Append-Log
-    $problemStat = New-ProblemStat -name "SourceRequest" -text 'Запрос источника' `
-         -counter $pagesCounter -total $pages.Count
-    $result = "" | select `
-        @{n='wikitext';e={$wikiText}},
-        @{n='problemstat';e={$problemStat}}
-    return $result
 }
 
 ### Single-Page Checks ###
@@ -161,6 +130,19 @@ function CheckWikipages-Empty-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-IconTemplates-Single {
+    param (
+        $page = ""
+    )
+    $mc = [regex]::matches($page.content, "{{[a-zA-Z]{2} icon}}")
+    if ($mc.groups.count -gt 0){
+        return "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-Isolated-Single {
     param (
         $page = ""
@@ -171,29 +153,6 @@ function CheckWikipages-Isolated-Single {
     } else {
         return ""
     }
-}
-
-# NO WORK YET
-function CheckWikipages-NoSources-Single {
-    param (
-        $page = ""
-    )
-    $wikiText = ""
-    if (($page.Content -match "<ref") -or
-        ($page.Content -match "{{sfn\|") -or
-        ($page.Content -match "==[ ]*Ссылки[ ]*==") -or
-        ($page.Content -match "==[ ]*Литература[ ]*==") -or
-        ($page.Content -match "==[ ]*Источники[ ]*==") -or
-        ($page.Content -match "\{\{IMDb name\|")
-        )
-    {
-        return ""
-    } else {
-        #$pagesNoSourcesAtAll += $page.Title
-        return "* [[$($page.Title)]]`n"
-    }
-
-    
 }
 
 # returns wikicode for a problem list
@@ -322,6 +281,31 @@ function CheckWikipages-NoRefs-Single {
 }
 
 # returns wikicode for a problem list
+# FIXME bad code: operates with global variable
+function CheckWikipages-NoSources-Single {
+    param (
+        $page = "",
+        $bypassedArgument = "@()"
+    )
+    $wikiText = ""
+    if (($page.Content -match "<ref") -or
+        ($page.Content -match "{{sfn\|") -or
+        ($page.Content -match "==[ ]*Ссылки[ ]*==") -or
+        ($page.Content -match "==[ ]*Литература[ ]*==") -or
+        ($page.Content -match "==[ ]*Источники[ ]*==") -or
+        ($page.Content -match "\{\{IMDb name\|")
+        )
+    {
+        return ""
+    } else {
+        $global:pagesNoSourcesAtAll += $page.Title
+        return "* [[$($page.Title)]]`n"
+    }
+
+    
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-PoorDates-Single {
     param (
         $page = ""
@@ -355,10 +339,24 @@ function CheckWikipages-PoorDates-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-RefTemplates-Single {
+    param (
+        $page = ""
+    )
+    $mc = [regex]::matches($page.content, "{{ref-[a-zA-Z]+\|[^\}]{0,200}}}|{{ref-[a-zA-Z]+}}")
+    if ($mc.groups.count -gt 0){
+        return "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-SemicolonSections-Single {
     param (
         $page = ""
     )
+    # $page = $vietPagesContent | where {$_.title -like "Олонец" }
     $pageSections = Get-WPPageSections -content $page.content
     $hasSemi = $false
     foreach ($section in ($pageSections | where {$_.name -notmatch "Литература|Примечания|Источники"})){
@@ -367,7 +365,7 @@ function CheckWikipages-SemicolonSections-Single {
         }
     }
     if ($hasSemi){
-        "* [[$($page.Title)]]`n"
+        return "* [[$($page.Title)]]`n"
     } else {
         return ""
     }
@@ -460,50 +458,6 @@ function CheckWikipages-WPLinks-Single {
     }
 }
 
-<#
-# returns wikicode for a problem list
-function CheckWikipages-LinksUnanvailable {
-    param (
-        $pages = @()
-    )
-    # $pages = $vietPagesContent
-    $wikiText = "=== Недоступные ссылки ===`n"
-    $wikiText += "Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.`n"
-    $pagesCounter = 0
-
-    foreach ($page in $pages){
-        $mc = [regex]::matches($page.content, "http[s]*://[^:]*{{Недоступная ссылка\|[^\}]{0,200}}}|{{Недоступная ссылка}}")
-        if ($mc.groups.count -gt 0){
-            $wikiText += "* [[$($page.title)]] ($($mc.groups.count))`n"
-            $pagesCounter++
-            #""
-            #"== [[$($page.title)]] == "
-            foreach ($m in $mc.Value) {
-                if ($m -match "^[^ \n\|\]{]*"){
-                    #$Matches.Values
-                    if (($Matches.Values -like "{{Недоступная") -or ($Matches.Values -like "")){
-                        $wikiText += "** (unknown)`n"
-                    } else {
-                        $wikiText += "** $($Matches.Values)`n"
-                    }
-                } else {
-                    throw "bad match"
-                }
-            }
-            #if ($page.title -like "Drabadzi-drabada") {throw "wait"}
-        }
-    }
-
-    "$pagesCounter have unavailable URLs" | Append-Log
-    $problemStat = New-ProblemStat -name "LinksUnanvailable" -text 'Недоступные ссылки' `
-         -counter $pagesCounter -total $pages.Count
-    $result = "" | select `
-        @{n='wikitext';e={$wikiText}},
-        @{n='problemstat';e={$problemStat}}
-    return $result
-}
-#>
-
 ### Function that calls other function
 
 # returns wikicode for a problem list
@@ -541,6 +495,9 @@ function CheckWikipages-Router {
     } elseif ( $checkType -like "Empty" ) {
         $checkTitle = "Очень короткие статьи"
         $wikiDescription = "Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code>.`n"
+    } elseif ( $checkType -like "IconTemplates" ) {
+        $checkTitle = "Страницы с *icon-шаблонами"
+        $wikiDescription = "Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki></code>.`n"
     } elseif ( $checkType -like "Isolated" ) {
         $checkTitle = "Изолированные статьи"
         $wikiDescription = "В другие статьи Википедии нужно добавить ссылки на такую статью, а потом удалить из неё шаблон об изолированности.`n"
@@ -566,6 +523,9 @@ function CheckWikipages-Router {
     } elseif ( $checkType -like "PoorDates" ) {
         $checkTitle = "Неформатные даты в cite web"
         $wikiDescription = "Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).`n"
+    } elseif ( $checkType -like "RefTemplates" ) {
+        $checkTitle = "Страницы с ref-шаблонами"
+        $wikiDescription = "Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki></code>.`n"
     } elseif ( $checkType -like "SemicolonSections" ) {
         $checkTitle = ";Недоразделы"
         $wikiDescription = "Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, "
@@ -575,6 +535,9 @@ function CheckWikipages-Router {
         $wikiDescription += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> "
         $wikiDescription += "или <code><nowiki>.{{sfn</nowiki></code>. Сноска должна стоять перед точкой, "
         $wikiDescription += "кроме случаев, когда точка является частью сокращения.`n"
+    } elseif ( $checkType -like "SourceRequest" ) {
+        $checkTitle = "Страницы с запросом источников"
+        $wikiDescription += "Добавьте источники, а затем уберите шаблон запроса с исправленной страницы.`n"
     } elseif ( $checkType -like "TooFewWikilinks" ) {
         $checkTitle = "Мало внутренних ссылок"
         $wikiDescription += "Добавьте больше.`n"
@@ -598,6 +561,9 @@ function CheckWikipages-Router {
         if ($wikiTextThisPage -notlike "") { $pagesCounter++ }
         $wikiTextBody += $wikiTextThisPage
     }
+
+    #"Replacing __ARG__ in $checkTitle with $bypassArgument ($($bypassArgument.GetType()))" | Append-Log
+    #$bypassArgument.GetEnumerator() | % {"$($_.Name) = $($_.Value)" | Append-Log}
 
     $checkTitleProcessed = $checkTitle -replace "__ARG__",$bypassArgument
     if ( ($pagesCounter -gt 0) -or ($returnEmpty) ){

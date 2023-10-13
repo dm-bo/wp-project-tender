@@ -84,10 +84,11 @@ function Get-WPPageSections {
     param (
         $content = ""
     )
+    # $content= $page.content
     $pageSections = @()
     $sectionContents = $content -split "=[=]+[ ]*[^=]*[ ]*=[=]+"
     $sectionNames = [regex]::matches($content, "=[=]+[ ]*[^=]*[ ]*=[=]+")
-    if ($mSections.groups.count -gt 0){
+    if ($sectionNames.groups.count -gt 0){
         $pageSections += "" | select @{n='name';e={"(head)"}},
             @{n='level';e={"1"}},
             @{n='content';e={$sectionContents[0]}}
