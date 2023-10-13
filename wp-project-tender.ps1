@@ -1,14 +1,19 @@
-﻿
+﻿## One-time part ##
+
 # Defining functions
 
 . "$PSScriptRoot/functions.ps1"
 . "$PSScriptRoot/wp-functions-aux.ps1"
 . "$PSScriptRoot/wp-functions-checks.ps1"
 
+# Authorizing
+
+# TODO not ready yet
+. "$PSScriptRoot/wp-authorizing.ps1"
+
 # Checklist
 
 # Basically, an incomplete list of checks that script can do
-# TODO move Communes to optional
 # Name, Option
 $checkArrs = @(
     @("NakedLinks",""),         # Голые ссылки
@@ -46,21 +51,19 @@ $checkArrs = @(
     @("TemplateRegexp","Обновить")
     )
 
-## default values ##
+# default values #
 
+# Get content for $batchsize pages per request
+$batchsize = 5
 # do not process these checks
 $checksDisabled = @()
 # do not work on these pages
 $excludePages = @()
-# output
-$outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 # performance optimizations
 $removeEasternNames = $false # replacing eastern names has no sence in this context
 $printEmptySections = $false
 
-$vietPages = @()
-
-## custom values
+## Iterate over areas
 
 ### Get project page names ###
 
@@ -80,237 +83,234 @@ $area = "Bollywood"
 $area = "Vietnam"
 #>
 
-if ($area -like "Vologda"){
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort  
-} elseif ($area -like "Vietnam") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort 
-    # FIXME dirty "" 
-    $checkArrs += @(@("Communes",""), @("",""))  # Декоммунизация
-    # $checkArrs[$checkArrs.Count-1]
-} elseif ($area -like "Holocaust") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
-    #
-    $checksDisabled = @("DirectWebarchive#",
-        "TemplateRegexp#Citation",
-        "TemplateRegexp#Cite press release",
-        "TemplateRegexp#PDFlink",
-        "TemplateRegexp#Wayback",
-        "TemplateRegexp#webarchive",
-        "TemplateRegexp#Архивировано",
-        "TemplateRegexp#Проверено",
-        "TemplateRegexp#ISBN",
-        "TemplateRegexp#h",
-        "IconTemplates#",
-        "RefTemplates#",
-        "Communes#")
-} elseif ($area -like "Belarus") {
-    $excludePages += @("Белоруссия/Шапка")
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "Israel") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "SverdlovskObl") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Свердловская область" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "Tatarstan") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "cybersport") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "Karelia") {
-    $checksDisabled = @("Communes#")
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Карелия" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "Myriad") {
-    $projectTemplate = "Шаблон:10000"
-} elseif ($area -like "Astronomy") {
-    $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
-    $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
-    $vietPagesSO | % { $vietPages += $_ -replace "Обсуждение:" }
-} elseif ($area -like "Bollywood") {
-    #$vietPages = Get-PagesByCategory -Category "Кинематограф Индии"
-    $cats = @("Кинематограф Индии")
-    #throw "not implemented yet"
-    $vietPages = $pags
-} else {
-    "INFO: Please set variable `$area first!"
-    throw "no valid area selected"
-}
+$areas = @("Vietnam", "Karelia")
+$areas = @("Vietnam")
 
-"INFO: working on $($area.ToUpper())" | Append-Log
-Start-Sleep -Seconds 5
+foreach ($area in $areas) {
 
-#$vietPages = Get-PagesByTemplate -Template $projectTemplate | where {$_ -notin $excludePages }
-#$vietPages = $vietPages | sort
-"$($vietPages.Count) page names found." | Append-Log
-if ($vietPages.Count -eq 0){
-    throw "no pages found"
-}
+    $vietPages = @()
+    # output
+    $outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
 
-### Получение контента и состояния патрулирования ###
+    if ($area -like "Vologda"){
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort  
+    } elseif ($area -like "Vietnam") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort 
+        # FIXME dirty "" 
+        $checkArrs += @(@("Communes",""), @("",""))  # Декоммунизация
+        # $checkArrs[$checkArrs.Count-1]
+    } elseif ($area -like "Holocaust") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
+        #
+        $checksDisabled = @("DirectWebarchive#",
+            "TemplateRegexp#Citation",
+            "TemplateRegexp#Cite press release",
+            "TemplateRegexp#PDFlink",
+            "TemplateRegexp#Wayback",
+            "TemplateRegexp#webarchive",
+            "TemplateRegexp#Архивировано",
+            "TemplateRegexp#Проверено",
+            "TemplateRegexp#ISBN",
+            "TemplateRegexp#h",
+            "IconTemplates#",
+            "RefTemplates#")
+    } elseif ($area -like "Belarus") {
+        $excludePages += @("Белоруссия/Шапка")
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "Israel") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "SverdlovskObl") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Свердловская область" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "Tatarstan") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "cybersport") {
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "Karelia") {
+        $checksDisabled = @("Communes#")
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Карелия" | where {$_ -notin $excludePages } | sort
+    } elseif ($area -like "Myriad") {
+        $projectTemplate = "Шаблон:10000"
+    } elseif ($area -like "Astronomy") {
+        $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
+        $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
+        $vietPagesSO | % { $vietPages += $_ -replace "Обсуждение:" }
+    } elseif ($area -like "Bollywood") {
+        #$vietPages = Get-PagesByCategory -Category "Кинематограф Индии"
+        $cats = @("Кинематограф Индии")
+        #throw "not implemented yet"
+        $vietPages = $pags
+    } else {
+        "INFO: Please set variable `$area first!"
+        throw "no valid area selected"
+    }
 
-$startTimeBatched = Get-Date
-$batchsize = 5 
-$batches = [math]::Ceiling( $vietPages.Count / $batchsize )
-$vietPagesContent = @()
-for ($i=0;$i -lt $batches;$i++){
-    $batchbegin = $i * $batchsize
-    $batchend = (($batchbegin + $batchsize - 1), ($vietPages.Count - 1) | Measure -Min).Minimum
-    $vietPageBatch = $vietPages[$batchbegin..$batchend] -join "|" -replace "&","%26"
-        #if ($vietPageBatch -like "*Topf*"){
-        #    throw "Topf!"
-        #}
+    "INFO: working on $($area.ToUpper())" | Append-Log
+    Start-Sleep -Seconds 5
 
-    "($i/$batches) [$batchbegin..$batchend] $vietPageBatch"
-    $URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=flagged%7Crevisions&formatversion=2&rvprop=content&rvslots=*&titles=$vietPageBatch"
-    $rq = Invoke-WebRequest -Uri $URL -Method GET
-    $JSONCont = $rq.Content | ConvertFrom-Json
-    foreach ($page in $JSONCont.query.pages){
-        # $page = $JSONCont.query.pages[0]
-        if ( -not $page.flagged ) {
-            $pending_since = 0
-        } elseif ($page.flagged.pending_since) {
-            $pending_since = $page.flagged.pending_since
+    #$vietPages = Get-PagesByTemplate -Template $projectTemplate | where {$_ -notin $excludePages }
+    #$vietPages = $vietPages | sort
+    "$($vietPages.Count) page names found." | Append-Log
+    if ($vietPages.Count -eq 0){
+        "No pages found for $area, proceeding to the next area" | Append-Log
+    }
+
+    ### Получение контента и состояния патрулирования ###
+
+    $startTimeBatched = Get-Date
+    $batches = [math]::Ceiling( $vietPages.Count / $batchsize )
+    $vietPagesContent = @()
+    for ($i=0;$i -lt $batches;$i++){
+        $batchbegin = $i * $batchsize
+        $batchend = (($batchbegin + $batchsize - 1), ($vietPages.Count - 1) | Measure -Min).Minimum
+        $vietPageBatch = $vietPages[$batchbegin..$batchend] -join "|" -replace "&","%26"
+            #if ($vietPageBatch -like "*Topf*"){
+            #    throw "Topf!"
+            #}
+        "($i/$batches) [$batchbegin..$batchend] $vietPageBatch"
+        $URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=flagged%7Crevisions&formatversion=2&rvprop=content&rvslots=*&titles=$vietPageBatch"
+        $rq = Invoke-WebRequest -Uri $URL -Method GET
+        $JSONCont = $rq.Content | ConvertFrom-Json
+        foreach ($page in $JSONCont.query.pages){
+            # $page = $JSONCont.query.pages[0]
+            if ( -not $page.flagged ) {
+                $pending_since = 0
+            } elseif ($page.flagged.pending_since) {
+                $pending_since = $page.flagged.pending_since
+            } else {
+                $pending_since = $null
+            }
+            $vietPagesContent += "" | select `
+                @{n='title';e={$page.title}}, `
+                @{n='content';e={$page.revisions.slots.main.content}}, `
+                @{n='pending_since';e={$pending_since}}
+        }
+    }
+    $vietPagesContent = $vietPagesContent | sort -Property title
+    $stopTimeBatched = (Get-Date) - $startTimeBatched
+    "$($vietPagesContent.Count) pages got their content in $([Math]::Round($stopTimeBatched.TotalSeconds)) seconds." | Append-Log
+    $vietPagesContent | where {$_.Content -like ""} | % { "WARNING: no content for $($_.Title)" | Append-Log }
+
+    ##### Extracting internal links #####
+    $linksOlolo = @()
+    $i = 0
+    $startOlolo = Get-Date
+    foreach ($page in $vietPagesContent){
+        $i++
+        if ($removeEasternNames){
+            # performange issue here
+            $content = $page.content -replace "{{Восточноазиатское имя[^}]{1,20}}}"
         } else {
-            $pending_since = $null
+            $content = $page.content
         }
-        $vietPagesContent += "" | select `
-            @{n='title';e={$page.title}}, `
-            @{n='content';e={$page.revisions.slots.main.content}}, `
-            @{n='pending_since';e={$pending_since}}
-    }
-}
-$vietPagesContent = $vietPagesContent | sort -Property title
-$stopTimeBatched = (Get-Date) - $startTimeBatched
-"$($vietPagesContent.Count) pages got their content in $([Math]::Round($stopTimeBatched.TotalSeconds)) seconds." | Append-Log
-$vietPagesContent | where {$_.Content -like ""} | % { "WARNING: no content for $($_.Title)" | Append-Log }
-
-##### HACK! HACK! HACK! #####
-# FIXME extremely slow
-$linksOlolo = @()
-$i = 0
-$startOlolo = Get-Date
-foreach ($page in $vietPagesContent){
-    $i++
-    if ($removeEasternNames){
-        # performange issue here
-        $content = $page.content -replace "{{Восточноазиатское имя[^}]{1,20}}}"
-    } else {
-        $content = $page.content
-    }
-    $mc = [regex]::matches($content, "\[\[[^\|\]\:]{1,255}[\]\|]{1,2}")
-    if ($mc.groups.count -gt 0){
-        #"== $($page.Title) =="
-        #$mc.groups | select -ExpandProperty Value 
-        #$mc.groups | select -ExpandProperty Value | % { $linksOlolo += $_ }
-        $linksOloloTemp = @()
-        $mcValues = $mc.groups | select -ExpandProperty Value
-        foreach ($value in $mcValues) {
-            $linksOloloTemp += "" | select `
-            @{n='link';e={$value -replace "\|$","" -replace "^\[\[" -replace "\]\]$" }}, `
-            @{n='page';e={$page.title}}
-            # $linksOloloTemp | group -Property link | sort -Descending -Property Count | select Count,Name
+        $mc = [regex]::matches($content, "\[\[[^\|\]\:]{1,255}[\]\|]{1,2}")
+        #$mc = [regex]::matches($content, "\[\[[^\|\]\:]{1,255}")
+        if ($mc.groups.count -gt 0){
+            $linksOlolo += $mc.groups | select -ExpandProperty Value | select `
+                @{n='link';e={ $_ -replace "\[" -replace "\]" -replace "\|" }}, `
+                @{n='page';e={ $page.title }}
         }
-        $linksOlolo += $linksOloloTemp
+        if (([string]$i -like "*00") -or ($i -eq $vietPagesContent.Count)){
+            "Extracting wikilinks: $i/$($vietPagesContent.Count) pages processed"
+        }
     }
-    if (([string]$i -like "*00") -or ($i -eq $vietPagesContent.Count)){
-        "Extracting wikilinks: $i/$($vietPagesContent.Count) pages processed"
+    $spentOlolo = (Get-Date) - $startOlolo
+    "$($linksOlolo.Count) internal links extracted in $([Math]::Round($spentOlolo.TotalSeconds,2)) seconds." | Append-Log
+
+    #####
+    ### Looking for problems
+    #####
+
+    $fullAnnounce = ""
+    $problemStats2 = @{}
+    $fullAnnounce2 = @{}
+
+    $pagesNoSourcesAtAll = @()
+
+    ### Не отпатрулированные статьи ###
+
+    $fullAnnounce += "== Не отпатрулированные статьи ==`n"
+    $notpatrolled = @($vietPagesContent | where {$_.pending_since -ne $null})
+    $patrolled_percent = [Math]::Round(100*($vietPages.Count-$notpatrolled.Count)/$vietPages.Count,2)
+    $fullAnnounce += "Patrolled $patrolled_percent % ($($vietPages.Count-$notpatrolled.Count) of $($vietPages.Count))`n"
+
+    foreach ($notpat in ( $notpatrolled | sort -Property pending_since,title )) {
+        if ( $notpat.pending_since -eq 0 ){
+            $fullAnnounce += "* [[$($notpat.title)]] вообще не патрулировалась`n"
+        } else {
+            $fullAnnounce += "* [[$($notpat.title)]] не патрулировалась с $([datetime]$notpat.pending_since)`n"
+        }
     }
-}
-$spentOlolo = (Get-Date) - $startOlolo
-"$($linksOlolo.Count) internal links extracted in $([Math]::Round($spentOlolo.TotalSeconds,2)) seconds." | Append-Log
 
-#####
-### Looking for problems
-#####
+    ### Оформление ###
 
-$fullAnnounce = ""
-$problemStats2 = @{}
-$fullAnnounce2 = @{}
+    $fullAnnounce += "== Недостатки статей ==`n"
 
-$pagesNoSourcesAtAll = @()
-
-### Не отпатрулированные статьи ###
-
-$fullAnnounce += "== Не отпатрулированные статьи ==`n"
-$notpatrolled = @($vietPagesContent | where {$_.pending_since -ne $null})
-$patrolled_percent = [Math]::Round(100*($vietPages.Count-$notpatrolled.Count)/$vietPages.Count,2)
-$fullAnnounce += "Patrolled $patrolled_percent % ($($vietPages.Count-$notpatrolled.Count) of $($vietPages.Count))`n"
-
-foreach ($notpat in ( $notpatrolled | sort -Property pending_since,title )) {
-    if ( $notpat.pending_since -eq 0 ){
-        $fullAnnounce += "* [[$($notpat.title)]] вообще не патрулировалась`n"
-    } else {
-        $fullAnnounce += "* [[$($notpat.title)]] не патрулировалась с $([datetime]$notpat.pending_since)`n"
+    ## New Age checks ##
+    # Iterate over checklist
+    # FIXME dirty ""
+    foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} | ? {$_[0] -notlike ""} )){
+        $checkName, $checkArgument = $checkArr
+        $fullAnnounce2["$checkName#$checkArgument"], $problemStats2["$checkName#$checkArgument"] = 
+             CheckWikipages-Router `
+                -checkPages $vietPagesContent -checkType $checkName `
+                -returnEmpty $printEmptySections -returnModeVersion 2 `
+                -bypassArgument $checkArgument #$checkArr[1] #$FuncParams
+        $fullAnnounce += $fullAnnounce2["$checkName#$checkArgument"]
+        #$problemStats += $problemStats2[$checkName]
     }
-}
 
-### Оформление ###
-
-$fullAnnounce += "== Недостатки статей ==`n"
-
-#### New Age checks ####
-# Iterate over checklist
-# FIXME dirty ""
-foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} | ? {$_[0] -notlike ""} )){
-    $checkName, $checkArgument = $checkArr
-    $fullAnnounce2["$checkName#$checkArgument"], $problemStats2["$checkName#$checkArgument"] = 
-         CheckWikipages-Router `
-            -checkPages $vietPagesContent -checkType $checkName `
-            -returnEmpty $printEmptySections -returnModeVersion 2 `
-            -bypassArgument $checkArgument #$checkArr[1] #$FuncParams
-    $fullAnnounce += $fullAnnounce2["$checkName#$checkArgument"]
-    #$problemStats += $problemStats2[$checkName]
-}
-
-## Много ссылок на даты
-$fullAnnounce += "=== Статьи с наиболее перевикифицированными датами ===`n"
-$yearLinks = @()
-$chronologies = $vietPagesContent.title | where {$_ -like "Хронология *"}
-foreach ($link in $linksOlolo){
-    if (($link.link -match "^[0-9]* год$") -or
-        ($link.link -match "^[0-9]* (января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$")){
-        $yearLinks += $link
+    ## Много ссылок на даты
+    $fullAnnounce += "=== Статьи с наиболее перевикифицированными датами ===`n"
+    $yearLinks = @()
+    $chronologies = $vietPagesContent.title | where {$_ -like "Хронология *"}
+    foreach ($link in $linksOlolo){
+        if (($link.link -match "^[0-9]* год$") -or
+            ($link.link -match "^[0-9]* (января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$")){
+            $yearLinks += $link
+        }
     }
-}
-"$($yearLinks.Count) links to dates" | Append-Log 
-$yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
-  | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
-"Dates estimated" | Append-Log
+    "$($yearLinks.Count) links to dates" | Append-Log 
+    $yearLinks | Group-Object -Property Page | sort -Property Count -Descending | select Count,Name `
+      | where {$_.Name -notin $chronologies}| select -First 20 | % { $fullAnnounce += "* [[$($_.Name)]] ($($_.Count))`n" }
+    "Dates estimated" | Append-Log
 
-### Стата ###
+    ### Стата ###
 
-$fullAnnounce += "== Статистика ==`n"
-$fullAnnounce += "{| class=`"wikitable`"
-!
-!кол-во
-!%
-|-
-|Всего
-|$($vietPages.Count)
-|100 %
-|-
-|Не отпатрулированные статьи
-|$($notpatrolled.Count)
-|$([Math]::Round(100*$notpatrolled.Count/$vietPages.Count,2)) %`n"
+    $fullAnnounce += "== Статистика ==`n"
+    $fullAnnounce += "{| class=`"wikitable`"
+    !
+    !кол-во
+    !%
+    |-
+    |Всего
+    |$($vietPages.Count)
+    |100 %
+    |-
+    |Не отпатрулированные статьи
+    |$($notpatrolled.Count)
+    |$([Math]::Round(100*$notpatrolled.Count/$vietPages.Count,2)) %`n"
 
-# $problemStats2.GetEnumerator() | select -ExpandProperty Value | select Name,text 
-$problemStats = $problemStats2.GetEnumerator() | select -ExpandProperty Value | sort -Property timestamp
+    # $problemStats2.GetEnumerator() | select -ExpandProperty Value | select Name,text 
+    $problemStats = $problemStats2.GetEnumerator() | select -ExpandProperty Value | sort -Property timestamp
  
-foreach ($problem in $problemStats){
-    $fullAnnounce += "|-`n"
-    $fullAnnounce += "|$($problem.text)`n"
-    $fullAnnounce += "|$($problem.counter)`n"
-    $fullAnnounce += "|$($problem.percent)`n"
+    foreach ($problem in $problemStats){
+        $fullAnnounce += "|-`n"
+        $fullAnnounce += "|$($problem.text)`n"
+        $fullAnnounce += "|$($problem.counter)`n"
+        $fullAnnounce += "|$($problem.percent)`n"
+    }
+
+    $fullAnnounce += "|}`n"
+
+    ### Вывод. Конец ###
+
+    $fullAnnounce += "На этом всё.`n`n"
+    $fullAnnounce += "Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].`n`n"
+    $fullAnnounce += "<!-- $(Get-Date) -->`n"
+
+    $fullAnnounce > $outputfile
+    "$area done" | Append-Log
 }
-
-$fullAnnounce += "|}`n"
-
-### Вывод. Конец ###
-
-$fullAnnounce += "На этом всё.`n"
-$fullAnnounce += "`n"
-$fullAnnounce += "Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].`n"
-$fullAnnounce += "`n"
-$fullAnnounce += "<!-- $(Get-Date) -->`n"
-
-$fullAnnounce > $outputfile
 
 throw "good ends here"
 
@@ -338,17 +338,44 @@ foreach ($page in $vietPagesContent){
 # Ш:rp
 
 # 1.564.400
+foreach ($page in $vietPagesContent){
+    # $templateNames = Get-WPPageTemplates -pageContent $content
+    $mc = [regex]::matches($page.content, "[\.\,][0-9]{3}[\.\,][0-9]{3}")
+    if ($mc.groups.count -gt 0){
+        "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        # return ""
+    }
+}
 
 # {{l6e|en}}
+foreach ($page in $vietPagesContent){
+    # $templateNames = Get-WPPageTemplates -pageContent $content
+    $mc = [regex]::matches($page.content, "{{l6e")
+    if ($mc.groups.count -gt 0){
+        "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        # return ""
+    }
+}
 
-# это отдельно
-## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
-
-# too much '{{lang' - write PoC
+# too much '{{lang', {{l6e - write PoC
 
 # cite news
 
 # <!-- Bot retrieved archive -->
+foreach ($page in $vietPagesContent){
+    # $templateNames = Get-WPPageTemplates -pageContent $content
+    $mc = [regex]::matches($page.content, "<!-- Bot retrieved archive -->")
+    if ($mc.groups.count -gt 0){
+        "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        # return ""
+    }
+}
+
+# это отдельно
+## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
 
 #######
 ### EXPERIMENTAL ###
