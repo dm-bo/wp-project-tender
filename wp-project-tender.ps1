@@ -1,9 +1,66 @@
 ﻿
-### Defining functions ###
+# Defining functions
 
 . "$PSScriptRoot/functions.ps1"
 . "$PSScriptRoot/wp-functions-aux.ps1"
 . "$PSScriptRoot/wp-functions-checks.ps1"
+
+# Checklist
+
+# Basically, an incomplete list of checks that script can do
+# TODO move Communes to optional
+# Name, Option
+$checkArrs = @(
+    @("NakedLinks",""),         # Голые ссылки
+    @("NoLinksInLinks",""),     # Статьи без ссылок в разделе "Ссылки"
+    @("NoRefs",""),             # Статьи без примечаний в разделе "Примечания"
+    @("DirectInterwikis",""),   # Статьи с прямыми интервики-ссылками
+    @("WPLinks",""),            # Ссылки на Википедию
+    @("BotTitles",""),          # <!-- Заголовок добавлен ботом -->
+    @("NoCats",""),             # Не содержат [[Категория:
+    @("DirectGoogleBooks",""),  # Direct links to Google books
+    @("DirectWebarchive",""),   # [web.archive
+    @("SNPREP",""),             # .<ref | .{{sfn — СН-ПРЕП
+    @("SemicolonSections",""),  # ;Пумпурум — поменять на разделы
+    @("TooFewWikilinks",""),    # Мало внутренних ссылок
+    @("PoorDates",""),          # неформатные даты в cite web (Архивировано 20220820034353 года.)
+    @("BadSquareKm",""),        # плохие квадратные километры
+    @("TemplateRegexp","Citation"),
+    @("TemplateRegexp","Cite press release"),
+    @("TemplateRegexp","PDFlink"),
+    @("TemplateRegexp","Wayback"),
+    @("TemplateRegexp","webarchive"),
+    @("TemplateRegexp","Архивировано"),
+    @("TemplateRegexp","Проверено"),
+    @("TemplateRegexp","ISBN"),
+    @("TemplateRegexp","h"),
+    @("IconTemplates", ""),
+    @("RefTemplates",""),
+    @("Isolated",""),
+    @("Empty",""),
+    @("NoSources", ""),
+    @("SourceRequest", ""),
+    @("LinksUnanvailable", ""),
+    @("TemplateRegexp","Аффилированные источники"),
+    @("TemplateRegexp","Спам-ссылки"),
+    @("TemplateRegexp","Обновить")
+    )
+
+## default values ##
+
+# do not process these checks
+$checksDisabled = @()
+# do not work on these pages
+$excludePages = @()
+# output
+$outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
+# performance optimizations
+$removeEasternNames = $false # replacing eastern names has no sence in this context
+$printEmptySections = $false
+
+$vietPages = @()
+
+## custom values
 
 ### Get project page names ###
 
@@ -20,40 +77,18 @@ $area = "Crimea"
 $area = "Myriad"
 $area = "Astronomy"
 $area = "Bollywood"
-#$area = "Football"
 $area = "Vietnam"
 #>
-
-## default values ##
-
-# checks
-$checksDisabled = @()
-$checkCiteWeb = $true
-$checkDirectWebarchive = $true
-$communesSearch = $false
-# do not work on these pages
-$excludePages = @()
-# output
-$outputfile = "C:\Users\Dm\Desktop\wp\badlinks-$area.txt"
-# performance optimizations
-$removeEasternNames = $false # replacing eastern names has no sence in this context
-$printEmptySections = $false
-
-$vietPages = @()
-
-## custom values
 
 if ($area -like "Vologda"){
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort  
 } elseif ($area -like "Vietnam") {
-    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort  
-    $communesSearch = $true
-    $printEmptySections = $false
+    $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort 
+    # FIXME dirty "" 
+    $checkArrs += @(@("Communes",""), @("",""))  # Декоммунизация
+    # $checkArrs[$checkArrs.Count-1]
 } elseif ($area -like "Holocaust") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
-
-    $checkCiteWeb = $false
-    $checkDirectWebarchive = $false
     #
     $checksDisabled = @("DirectWebarchive#",
         "TemplateRegexp#Citation",
@@ -68,26 +103,15 @@ if ($area -like "Vologda"){
         "IconTemplates#",
         "RefTemplates#",
         "Communes#")
-
-    $printEmptySections = $false
 } elseif ($area -like "Belarus") {
     $excludePages += @("Белоруссия/Шапка")
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
-    $checkCiteWeb = $false
-    $checkDirectWebarchive = $false
 } elseif ($area -like "Israel") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
-    $checkCiteWeb = $false
-    $checkDirectWebarchive = $false
-    #$excludePages = @("Белоруссия/Шапка")
 } elseif ($area -like "SverdlovskObl") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Свердловская область" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Tatarstan") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
-} elseif ($area -like "Football") {
-    "WARNING: working on FOOTBALL" | Append-Log
-    $projectTemplate = "Шаблон:Статья%20проекта%20Футбол"
-    throw "Not ready for almost 30k pages"
 } elseif ($area -like "cybersport") {
     $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
 } elseif ($area -like "Karelia") {
@@ -223,45 +247,8 @@ $fullAnnounce += "== Недостатки статей ==`n"
 
 #### New Age checks ####
 # Iterate over checklist
-# TODO move Communes to optional
-# Name, Option
-$checkArrs = @(
-    @("NakedLinks",""),         # Голые ссылки
-    @("NoLinksInLinks",""),     # Статьи без ссылок в разделе "Ссылки"
-    @("NoRefs",""),             # Статьи без примечаний в разделе "Примечания"
-    @("DirectInterwikis",""),   # Статьи с прямыми интервики-ссылками
-    @("WPLinks",""),            # Ссылки на Википедию
-    @("BotTitles",""),          # <!-- Заголовок добавлен ботом -->
-    @("NoCats",""),             # Не содержат [[Категория:
-    @("DirectGoogleBooks",""),  # Direct links to Google books
-    @("DirectWebarchive",""),   # [web.archive
-    @("SNPREP",""),             # .<ref | .{{sfn — СН-ПРЕП
-    @("SemicolonSections",""),  # ;Пумпурум — поменять на разделы
-    @("TooFewWikilinks",""),    # Мало внутренних ссылок
-    @("PoorDates",""),          # неформатные даты в cite web (Архивировано 20220820034353 года.)
-    @("BadSquareKm",""),        # плохие квадратные километры
-    @("Communes",""),           # Декоммунизация
-    @("TemplateRegexp","Citation"),
-    @("TemplateRegexp","Cite press release"),
-    @("TemplateRegexp","PDFlink"),
-    @("TemplateRegexp","Wayback"),
-    @("TemplateRegexp","webarchive"),
-    @("TemplateRegexp","Архивировано"),
-    @("TemplateRegexp","Проверено"),
-    @("TemplateRegexp","ISBN"),
-    @("TemplateRegexp","h"),
-    @("IconTemplates", ""),
-    @("RefTemplates",""),
-    @("Isolated",""),
-    @("Empty",""),
-    @("NoSources", ""),
-    @("SourceRequest", ""),
-    @("LinksUnanvailable", ""),
-    @("TemplateRegexp","Аффилированные источники"),
-    @("TemplateRegexp","Спам-ссылки"),
-    @("TemplateRegexp","Обновить")
-    )
-foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} )){
+# FIXME dirty ""
+foreach ($checkArr in @($checkArrs | ? {"$($_[0])#$($_[1])" -notin $checksDisabled} | ? {$_[0] -notlike ""} )){
     $checkName, $checkArgument = $checkArr
     $fullAnnounce2["$checkName#$checkArgument"], $problemStats2["$checkName#$checkArgument"] = 
          CheckWikipages-Router `
