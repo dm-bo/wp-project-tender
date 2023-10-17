@@ -1,24 +1,21 @@
 ﻿## One-time part ##
 
 # Defining functions
-
 . "$PSScriptRoot/functions.ps1"
 . "$PSScriptRoot/wp-functions-aux.ps1"
 . "$PSScriptRoot/wp-functions-checks.ps1"
 
-"=== STARTED AT $(Get-Date) ===" | Append-Log
-
-# Authorizing
-
 # vars $login and $pass comes from here
 . "$PSScriptRoot/wp-authorizing.ps1"
 
-$session = Get-WPAuthorizedSession -login $login -pass $pass
-if (Get-WPSessionStatus) {
-    "User is authorized" | Append-Log
-} else {
-    "WARNING: User is not authorized" | Append-Log
-}
+$updates = @(
+    ("" | select @{n='date';e={Get-Date -Date "15.10.2023 20:57:13"}},
+        @{n='text';e={"Old dummy update"}}),
+    ("" | select @{n='date';e={Get-Date -Date "17.10.2023 22:22:13"}},
+        @{n='text';e={"Новая проверка: Архив добавлен ботом"}})
+)
+
+"=== STARTED AT $(Get-Date) ===" | Append-Log
 
 # Checklist
 
@@ -31,6 +28,7 @@ $checkArrs = @(
     @("DirectInterwikis",""),   # Статьи с прямыми интервики-ссылками
     @("WPLinks",""),            # Ссылки на Википедию
     @("BotTitles",""),          # <!-- Заголовок добавлен ботом -->
+    @("BotArchives",""),        # <!-- Bot retrieved archive -->
     @("NoCats",""),             # Не содержат [[Категория:
     @("DirectGoogleBooks",""),  # Direct links to Google books
     @("DirectWebarchive",""),   # [web.archive
@@ -103,7 +101,7 @@ foreach ($area in $areas) {
     # no posting by default
     $postResultsPage = ""
     # a comment the the edit
-    $summary = "плановое обновление"
+    $summary = "плановое обновление данных"
     # new array for page names
     $vietPages = @()
 
@@ -115,6 +113,7 @@ foreach ($area in $areas) {
         # FIXME move to includable modules
         $checkArrs += @(@("Communes",""), @("",""))  # Декоммунизация
         # $checkArrs[$checkArrs.Count-1]
+        $postResults = $false
         $postResultsPage = "Участник:Klientos/Ссылки проекта Вьетнам"
     } elseif ($area -like "Holocaust") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
@@ -344,18 +343,43 @@ foreach ($area in $areas) {
 
     $fullAnnounce += "|}`n"
 
-    ### Вывод. Конец ###
-
     $fullAnnounce += "На этом всё.`n`n"
     $fullAnnounce += "Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].`n`n"
     $fullAnnounce += "<!-- {{User:Klientos/project-tender " +
         "|timestamp=$(Get-Date) }} -->`n"
 
-    $fullAnnounce > $outputfile
+    # Versioning
 
-    if ($postResultsPage -notlike ""){
-        "Results saved to file, now posting to $postResultsPage..." | Append-Log
-        # "STUB POSTING" | Append-Log
+    $URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=flagged%7Crevisions&formatversion=2&rvprop=content&rvslots=*&titles=$postResultsPage"
+    $rq = Invoke-WebRequest -Uri $URL -Method GET
+    $existingContent = $rq.Content | ConvertFrom-Json
+    $existingContent = $existingContent.query.pages[0].revisions.slots.main.content
+    #$existingContent = $fullAnnounce
+    $fa = [regex]::matches($existingContent, "{{User:Klientos/project-tender[^}]*")
+    if ($fa.Count -gt 0){ 
+        $fa_timestamp = [datetime](([regex]::matches([string]$fa.Value, "\|[ ]*timestamp[ ]*=([^\|]*)") |
+            select -ExpandProperty Value) -split "=" | select -Last 1).Trim()
+        $currentUpdates = @($updates | where {$_.date -gt $fa_timestamp})
+        if ($currentUpdates.Count -gt 0) {
+            $updatesAnnounce = "<!-- `nНовое в этом обновлении:`n"
+            $currentUpdates | % { $updatesAnnounce += "* $($_.text)`n" }
+            $updatesAnnounce += "-->`n"
+            $fullAnnounce = $updatesAnnounce + $fullAnnounce
+            $summary = $summary + ", обновление скрипта"
+        }
+    }
+
+    if ($postResults){
+        "Now posting to $postResultsPage..." | Append-Log
+
+        # Authorizing
+        $session = Get-WPAuthorizedSession -login $login -pass $pass
+        if (Get-WPSessionStatus) {
+            "User is authorized" | Append-Log
+        } else {
+            "WARNING: User is not authorized" | Append-Log
+        }
+
         if (Set-WPPageText -session $session -title $postResultsPage -newtext $fullAnnounce -summary $summary){
             "Success." | Append-Log
         } else {
@@ -364,6 +388,9 @@ foreach ($area in $areas) {
     } else {
         "No results posting, just saved to file." | Append-Log
     }
+    
+    ### Вывод. Конец ###
+    $fullAnnounce > $outputfile
 
     "$area done" | Append-Log
 }

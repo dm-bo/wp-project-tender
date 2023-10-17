@@ -28,6 +28,19 @@ function CheckWikipages-BotTitles-Single {
 }
 
 # returns wikicode for a problem list
+function CheckWikipages-BotArchives-Single {
+    param (
+        $page = ""
+    )
+    if ($page.Content -match "<!-- Bot retrieved archive -->")
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode for a problem list
 function CheckWikipages-Communes-Single {
     param (
         $page = ""
@@ -482,6 +495,9 @@ function CheckWikipages-Router {
     } elseif ( $checkType -like "BotTitles" ) {
         $checkTitle = "Заголовок добавлен ботом"
         $wikiDescription = "Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki><!-- Заголовок добавлен ботом --></nowiki>''`n"
+    } elseif ( $checkType -like "BotArchives" ) {
+        $checkTitle = "Архив добавлен ботом"
+        $wikiDescription = "Нужно проверить архив, и убрать html-комментарий ''<nowiki><!-- Bot retrieved archive --></nowiki>''`n"
     } elseif ( $checkType -like "Communes" ) {
         $checkTitle = "Коммуны"
         $wikiDescription = "Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено.`n"
