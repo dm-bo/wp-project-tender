@@ -1,3 +1,104 @@
+# returns boolean; true if user id is not 0
+function Get-WPSessionStatus {
+    param (
+        $session = $session
+    )
+    $URL = "https://ru.wikipedia.org/w/api.php"
+    $PARAMS_3 = @{
+        "action"= "query";
+        "meta"= "userinfo";
+        "format"= "json"
+    }
+    $rq3 = Invoke-WebRequest -Uri $URL -Method POST -Body  $PARAMS_3 -WebSession $session
+    $JSONCont3 = $rq3.Content | ConvertFrom-Json
+    if ($JSONCont3.query.userinfo.id -ne 0){
+        return $true
+    }
+    return $false
+}
+
+# returns authorized session
+function Get-WPAuthorizedSession {
+    param (
+        $login = "",
+        $pass  = ""
+    )
+
+    # First, get token
+
+    $URL = "https://ru.wikipedia.org/w/api.php"
+    $PARAMS_1 = @{
+        'action' = "query";
+        'meta'   = "tokens";
+        'type'   = "login";
+        'format' = "json"
+    }
+    $rq1 = Invoke-WebRequest -Uri $URL -Method GET -Body $PARAMS_1 -SessionVariable session
+    $JSONCont1 = $rq1.Content | ConvertFrom-Json
+    $logintoken = $JSONCont1.query.tokens.logintoken
+    #"login token is $logintoken"
+    #$session
+
+    # Second, return authorized session
+
+    $PARAMS_2 = @{
+        'action'= "login";
+        'lgname'= $login;
+        'lgpassword'= $pass;
+        'lgtoken'= $logintoken;
+        'format'= "json"
+    }
+
+    $rq2 = Invoke-WebRequest -Uri $URL -Method POST -Body  $PARAMS_2 -WebSession $session
+    $JSONCont2 = $rq2.Content | ConvertFrom-Json
+    #$JSONCont2
+    if (Get-WPSessionStatus -session $session) {
+        return $session
+    }
+    return ""
+}
+
+# needs authenticated session
+function Set-WPPageText {
+    param (
+        $session = "",
+        $title = "",
+        $newtext = "",
+        $summary = "change made via API"
+    )
+
+    if ( -not (Get-WPSessionStatus -session $session )){
+        return $false
+    }
+
+    # GET request to fetch CSRF token
+    $PARAMS_4 = @{
+        "action" = "query";
+        "meta"   = "tokens";
+        "format" = "json"
+    }
+    $rq4 = Invoke-WebRequest -Uri $URL -Method GET -Body  $PARAMS_4 -WebSession $session
+    $JSONCont4 = $rq4.Content | ConvertFrom-Json
+    $csrftoken = $JSONCont4.query.tokens.csrftoken
+
+    # POST request to edit a page
+    $PARAMS_5 = @{
+        "action"   = "edit";
+        "title"    = $title;
+        "token"    = $csrftoken;
+        "text"     = $newtext;
+        "summary"  = $summary;
+        "nocreate" = 1;
+        "format"   = "json"
+    }
+
+    $rq5 = Invoke-WebRequest -Uri $URL -Method POST -Body  $PARAMS_5 -WebSession $session
+    $JSONCont5 = $rq5.Content | ConvertFrom-Json
+    if ($JSONCont5.edit.result -like "Success"){ 
+        return $true
+    }
+    return $false
+}
 
 # gets template name
 # returns array of page names

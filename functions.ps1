@@ -28,7 +28,7 @@ function Append-Log {
             $format1 = @{ ForegroundColor = "Yellow" }
         } elseif ($InputString -like "ERROR*") {
             # $prefix = "ERROR"
-            $format1 = @{ ForegroundColor = "White" }
+            $format1 = @{ ForegroundColor = "Red" }
         } elseif (($InputString -like "CRITICAL*") -or ($InputString -like "FATAL*")) {
             # $prefix = "CRITICAL"
             $format1 = @{ BackgroundColor = "DarkRed" }

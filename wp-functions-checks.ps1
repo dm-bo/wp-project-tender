@@ -352,6 +352,7 @@ function CheckWikipages-SemicolonSections-Single {
 }
 
 # returns wikicode for a problem list
+# TODO also need check commas, colons etc.
 function CheckWikipages-SNPREP-Single {
     param (
         $page = ""
@@ -534,9 +535,10 @@ function CheckWikipages-Router {
         $wikiDescription += "её следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.`n"
     } elseif ( $checkType -like "SNPREP" ) {
         $checkTitle = "[[ВП:СН-ПРЕП|СН-ПРЕП]]"
-        $wikiDescription += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> "
-        $wikiDescription += "или <code><nowiki>.{{sfn</nowiki></code>. Сноска должна стоять перед точкой, "
-        $wikiDescription += "кроме случаев, когда точка является частью сокращения.`n"
+        $wikiDescription += "Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> или " +
+        "<code><nowiki>.{{sfn</nowiki></code>, либо их вариации с пробелами, как <code><nowiki>. " +
+        "<ref</nowiki></code>. Сноска должна стоять перед точкой, кроме случаев, когда точка является "+
+        "частью сокращения.`n"
     } elseif ( $checkType -like "SourceRequest" ) {
         $checkTitle = "Страницы с запросом источников"
         $wikiDescription += "Добавьте источники, а затем уберите шаблон запроса с исправленной страницы.`n"
