@@ -1,0 +1,46 @@
+{% if prologue %}{{ prologue }}{% endif %}
+== Не отпатрулированные статьи ==
+{% if viet_pages_not_patrolled %}{% for page in viet_pages_not_patrolled %}* [[{{page}}]] вообще не патрулировалась
+{% endfor %}{% endif %}{% if viet_pages_old_patrolled %}{% for page in viet_pages_old_patrolled %}* [[{{page.title}}]] не патрулировалась с {{page.date}}
+{% endfor %}{% endif %}
+
+== Недостатки статей ==
+{% for check in checks %}{% if check.counter %}
+=== {{ check.title }} ===
+{{ check.descr }}
+{% for page in check.pages %}
+* [[{{ page.title }}]]{% if page.counter %} ({{ page.counter }}){% endif %}
+
+{% if page.samples|length > 0 %}{% for sample in page.samples %}
+{% if check.nowiki %}
+** <nowiki>{{ sample }}</nowiki>
+{% else %}
+** {{ sample }}
+{% endif %}
+{% endfor %}{% endif %}
+{% endfor %}
+
+{% endif %}{% endfor %}
+== Статистика ==
+
+{| class=`"wikitable`"
+!
+!кол-во
+!%
+{% for check in checks %}
+|-
+| {{ check.name }}
+| {{ check.counter }}
+{# | {{ "{:,.2f}".format(check.percent) }} % #}
+| {{ '%0.2f'|format(check.percent) }} %
+{% endfor %}
+|}
+
+На этом всё.
+
+Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].
+
+<!-- Чтобы отключить обновление этой страницы, удалите всё ниже: -->
+<!-- {{ '{{' }}User:Klientos/project-tender |timestamp={{ timestamp }} {{ '}}' }} -->
+
+{% block content %}{% endblock %}

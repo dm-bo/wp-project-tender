@@ -284,3 +284,47 @@ function Get-WPDateFormat {
                 ($date -match "^[0-9]{4}-[0-9]{2}$") -or ($date -match "^[0-9]{4}$") -or
                 ($date -match "^[ ]*$") -or ($date -match "^$"))
 }
+
+
+# under construction
+function Get-WPMultipages {
+    param (
+        $options = @{}
+    )
+
+    $URL = "http://ru.wikipedia.org/w/api.php"
+    $continue = $true
+    $result = @()
+    
+    #action=query&format=json&prop=linkshere&lhlimit=500&formatversion=2&lhnamespace=0&lhshow=!redirect&titles=$vietPageBatch"
+    $options = @{
+        'action' = "query";
+        'format' = "json";
+        'formatversion'   = "2";
+        'prop'   = "linkshere";
+        'lhlimit'   = "500";
+        'lhnamespace'   = "0";
+        'lhshow'   = "!redirect";
+        'titles'   = "Каасъягер, Сандер|Кан Мин|Киберспорт|Киберспорт в Казахстане|Киберспорт в России"
+    }
+    
+    $nextOptions = $options
+    while ($continue){
+        $rq = Invoke-WebRequest -Uri $URL -Method GET -Body $nextOptions
+        $JSONCont = $rq.Content | ConvertFrom-Json
+        
+        if ($JSONCont.continue) {
+            $continue = $true
+            $JSONCont.continue
+            $nextOptions = $options
+            $continueOption = $JSONCont.continue.PSObject.Members | ? {$_.MemberType -eq "NoteProperty"} | % { $nextOptions += @{$_.Name = $_.Value} }
+        } else {
+            $continue = $false
+        }
+
+        "Hi"
+        $JSONCont.query.pages | select pageid,ns,title,@{n='cou';e={$_.linkshere.Count}}
+
+    }
+    return $result
+}

@@ -4,13 +4,14 @@
 . "$PSScriptRoot/functions.ps1"
 . "$PSScriptRoot/wp-functions-aux.ps1"
 . "$PSScriptRoot/wp-functions-checks.ps1"
+. "$PSScriptRoot/wp-functions-checks-migrated.ps1"
 
 # vars $login and $pass comes from here
 . "$PSScriptRoot/wp-authorizing.ps1"
 
+$flagTemplate = "User:Klientos/project-tender"
+
 $updates = @(
-    ("" | select @{n='date';e={Get-Date -Date "15.10.2023 20:57:13"}},
-        @{n='text';e={"Old dummy update"}}),
     ("" | select @{n='date';e={Get-Date -Date "17.10.2023 22:22:13"}},
         @{n='text';e={"Новая проверка: Архив добавлен ботом"}})
 )
@@ -21,7 +22,7 @@ $updates = @(
 
 # Basically, an incomplete list of checks that script can do
 # Name, Option
-$checkArrs = @(
+$checkArrs_0 = @(
     @("NakedLinks",""),         # Голые ссылки
     @("NoLinksInLinks",""),     # Статьи без ссылок в разделе "Ссылки"
     @("NoRefs",""),             # Статьи без примечаний в разделе "Примечания"
@@ -66,22 +67,10 @@ $checkArrs = @(
 
 ### Get project page names ###
 
-<#
-$area = "Belarus"
-$area = "Tatarstan"
-$area = "Israel"
-$area = "cybersport"
-$area = "Holocaust"
-$area = "Vologda"
-$area = "SverdlovskObl"
-$area = "Karelia"
-#$area = "Astronomy"
-#$area = "Bollywood"
-$area = "Vietnam"
-#>
-
-$areas = @("Vietnam", "Karelia", "Vologda", "cybersport", "Tatarstan", "Holocaust", "Belarus", "Israel", "SverdlovskObl")
+$areas = @("Vietnam", "Vologda", "cybersport", "Tatarstan", "Holocaust", "Belarus", "Israel", "SverdlovskObl")
+$areas = @("Belarus", "Karelia", "Israel")
 $areas = @("Vietnam")
+$areas = @("Vietnam", "Karelia", "Vologda", "cybersport", "Tatarstan", "Holocaust", "Belarus", "Israel", "SverdlovskObl")
 
 foreach ($area in $areas) {
 
@@ -99,21 +88,25 @@ foreach ($area in $areas) {
     # a text before anything else
     $prologue = ""
     # no posting by default
+    $postResults = $false
     $postResultsPage = ""
     # a comment the the edit
     $summary = "плановое обновление данных"
     # new array for page names
     $vietPages = @()
+    $checkArrs = $checkArrs_0
 
     if ($area -like "Vologda"){
-        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort  
+        $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вологда" | where {$_ -notin $excludePages } | sort
+        $postResults = $true
+        $postResultsPage = "Проект:Вологда/Недостатки статей"  
     } elseif ($area -like "Vietnam") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Вьетнам" | where {$_ -notin $excludePages } | sort 
         # FIXME dirty ""
         # FIXME move to includable modules
         $checkArrs += @(@("Communes",""), @("",""))  # Декоммунизация
         # $checkArrs[$checkArrs.Count-1]
-        $postResults = $false
+        $postResults = $true
         $postResultsPage = "Участник:Klientos/Ссылки проекта Вьетнам"
     } elseif ($area -like "Holocaust") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Холокост" | where {$_ -notin $excludePages } | sort
@@ -131,6 +124,8 @@ foreach ($area in $areas) {
             "IconTemplates#",
             "RefTemplates#")
         $prologue = "Исправленные проблемы просьба убирать из списка!`n"
+        $postResults = $true
+        $postResultsPage = "Проект:Холокост/Недостатки статей"
     } elseif ($area -like "Belarus") {
         $excludePages += @("Белоруссия/Шапка")
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Белоруссия" | where {$_ -notin $excludePages } | sort
@@ -146,6 +141,8 @@ foreach ($area in $areas) {
             "TemplateRegexp#h",
             "IconTemplates#",
             "RefTemplates#")
+        $postResults = $true
+        $postResultsPage = "Проект:Белоруссия/Недостатки статей"
     } elseif ($area -like "Israel") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Израиль" | where {$_ -notin $excludePages } | sort
         $checksDisabled = @("DirectWebarchive#",
@@ -160,17 +157,24 @@ foreach ($area in $areas) {
             "TemplateRegexp#h",
             "IconTemplates#",
             "RefTemplates#")
+        $postResults = $true
+        $postResultsPage = "Проект:Израиль/Недостатки статей"
     } elseif ($area -like "SverdlovskObl") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Свердловская область" | where {$_ -notin $excludePages } | sort
+        $postResults = $true
+        $postResultsPage = "Проект:Свердловская область/Недостатки статей"
     } elseif ($area -like "Tatarstan") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Татарстан" | where {$_ -notin $excludePages } | sort
+        $postResults = $true
+        $postResultsPage = "Проект:Татарстан/Недостатки статей"
     } elseif ($area -like "cybersport") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Киберспорт" | where {$_ -notin $excludePages } | sort
+        $postResults = $true
         $postResultsPage = "Проект:Киберспорт/Недостатки статей"
     } elseif ($area -like "Karelia") {
         $vietPages = Get-PagesByTemplate -Template "Шаблон:Статья проекта Карелия" | where {$_ -notin $excludePages } | sort
-    } elseif ($area -like "Myriad") {
-        $projectTemplate = "Шаблон:10000"
+        $postResults = $true
+        $postResultsPage = "Проект:Карелия/Недостатки статей"
     } elseif ($area -like "Astronomy") {
         $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
         $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
@@ -180,6 +184,7 @@ foreach ($area in $areas) {
         $cats = @("Кинематограф Индии")
         #throw "not implemented yet"
         $vietPages = $pags
+        $vietPages = @()
     } else {
         "INFO: Please set variable `$area first!"
         throw "no valid area selected"
@@ -192,7 +197,14 @@ foreach ($area in $areas) {
     #$vietPages = $vietPages | sort
     "$($vietPages.Count) page names found." | Append-Log
     if ($vietPages.Count -eq 0){
-        "No pages found for $area, proceeding to the next area" | Append-Log
+        "WARNING: No pages found for $area, proceeding to the next area" | Append-Log
+    }
+
+    $URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=flagged%7Crevisions&formatversion=2&rvprop=content&rvslots=*&titles=$postResultsPage"
+    $rq = Invoke-WebRequest -Uri $URL -Method GET 
+    if (($rq.Content | ConvertFrom-Json).query.pages[0].revisions.slots.main.content -notmatch "{{$flagTemplate "){
+        "WARNING: no flag template on the result page $postResultsPage, proceeding to the next area" | Append-Log
+        continue
     }
 
     ### Получение контента и состояния патрулирования ###
@@ -345,6 +357,7 @@ foreach ($area in $areas) {
 
     $fullAnnounce += "На этом всё.`n`n"
     $fullAnnounce += "Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].`n`n"
+    $fullAnnounce += "<!-- Чтобы отключить обновление этой страницы, удалите всё ниже: -->`n"
     $fullAnnounce += "<!-- {{User:Klientos/project-tender " +
         "|timestamp=$(Get-Date) }} -->`n"
 
@@ -446,6 +459,38 @@ foreach ($page in $vietPagesContent){
     } else {
         # return ""
     }
+}
+
+# No links here
+# TODO needs function to get "continue"
+$batchsize = 5
+$batches = [math]::Ceiling( $vietPages.Count / $batchsize )
+for ($i=0;$i -lt $batches;$i++){
+    $batchbegin = $i * $batchsize
+    $batchend = (($batchbegin + $batchsize - 1), ($vietPages.Count - 1) | Measure -Min).Minimum
+    $vietPageBatch = $vietPages[$batchbegin..$batchend] -join "|" -replace "&","%26"
+        #if ($vietPageBatch -like "*Topf*"){
+        #    throw "Topf!"
+        #}
+    "($i/$batches) [$batchbegin..$batchend] $vietPageBatch"
+    #foreach ($page in $vietPages){
+        $URL = "https://ru.wikipedia.org/w/api.php?action=query&format=json&prop=linkshere&lhlimit=500&formatversion=2&lhnamespace=0&lhshow=!redirect&titles=$vietPageBatch"
+        $rq = Invoke-WebRequest -Uri $URL -Method GET
+        $JSONCont = $rq.Content | ConvertFrom-Json
+        if ($JSONCont.continue){
+            throw "cont"
+        }
+        #$JSONCont.query.pages[0].linkshere
+        #$JSONCont.query.pages[0] | fl *
+        foreach ($page in $JSONCont.query.pages){
+            $linkscount = ($page.linkshere | where {$_.ns -eq 0} | where {$_.redirect -like "False"}).Count
+            if ($linkscount -eq 0){
+                "WARNING: $($page.title) ($linkscount)" | Append-Log
+            } else {
+                "INFO: $($page.title) ($linkscount)" | Append-Log
+            }
+        }
+    #}
 }
 
 # Direct external links
@@ -611,6 +656,8 @@ foreach ($disGroup in $disGroups){
 
 # Тихоокеанский театр военных действий Второй мировой войны#.D0.92.D0.BE.D0.BB.D0.BD.D0.B0 .D0.BF.D0.BE.D0.B1.D0.B5.D0.B4 .D0.AF.D0.BF.D0.BE.D0.BD.D0.B8.D0.B8 .28.D0.B4.D0.B5.D0.BA.D0.B0.D0.B1.D1.80.D1.8C 1941 .E2.80.94 .D0.BC.D0.B0.D0.B9 1942.29
 # very bad link (see ololo)
+
+# Template:нарушение авторских прав
 
 # это отдельно
 ## --вьет-стабы-- и вьет-гео-стабы не в проекте. Статьи в категории, но не в проекте.
