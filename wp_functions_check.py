@@ -107,8 +107,8 @@ def check_wp_no_cats(viet_pages_content):
         if not re.search(r"\[\[Категория\:", page['content']) and \
           not re.search(r"{{кинорежиссёр\|", page['content']) and \
           not re.search(r"{{сценарист\|", page['content']) and \
-          not re.search(r"{{певица\|", page['content']) and \
-          not re.search(r"{{актриса\|", page['content']) and \
+          not re.search(r"{{[Пп]евица\|", page['content']) and \
+          not re.search(r"{{[Аа]ктриса\|", page['content']) and \
           not re.search(r"{{историк\|", page['content']) and \
           not re.search(r"{{археолог\|", page['content']) and \
           not re.search(r"{{список однофамильцев}}", page['content']) and \
@@ -158,7 +158,7 @@ def check_wp_no_refs(viet_pages_content):
 def check_wp_SNPREP(viet_pages_content):
     result = []
     for page in viet_pages_content:
-        mc = re.findall(r".{6}\.[ ]*(<ref[ >]|{{sfn\|)", page['content'])
+        mc = re.findall(r".{6}\.[ ]*(?:<ref[ >]|{{sfn\|)", page['content'])
         samples = []
         for m in mc:
             if re.search(r"[  ]г.(<|{)", m) or \
@@ -173,6 +173,27 @@ def check_wp_SNPREP(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(samples)))
     return result
 
+def check_wp_source_request(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"{{rq\|[^\}]{0,20}sources[\|}]", page['content'])
+        mc += re.findall(r"{{Нет источников\|", page['content'])
+        mc += re.findall(r"{{Нет ссылок\|", page['content'])
+        if mc:
+            result.append(ProblemPage(title=page['title']))
+    return result
+
+
+
+###
+
+def check_wp_wp_links(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"\[http[s]*://[a-z]+.wikipedia.org", page['content'])
+        if mc:
+            result.append(ProblemPage(title=page['title'],counter=len(mc)))
+    return result
 
 
 ### Single-Page Checks ###

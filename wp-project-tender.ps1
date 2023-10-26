@@ -67,8 +67,6 @@ $checkArrs_0 = @(
 
 ### Get project page names ###
 
-$areas = @("Vietnam", "Vologda", "cybersport", "Tatarstan", "Holocaust", "Belarus", "Israel", "SverdlovskObl")
-$areas = @("Belarus", "Karelia", "Israel")
 $areas = @("Vietnam")
 $areas = @("Vietnam", "Karelia", "Vologda", "cybersport", "Tatarstan", "Holocaust", "Belarus", "Israel", "SverdlovskObl")
 

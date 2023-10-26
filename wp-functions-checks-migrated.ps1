@@ -244,4 +244,38 @@ function CheckWikipages-SNPREP-Single {
     return ""
 }
 
+# returns wikicode for a problem list
+function CheckWikipages-WPLinks-Single {
+    param (
+        $page = ""
+    )
+    $mc = [regex]::matches($page.content, "\[http[s]*://[a-z]+.wikipedia.org")
+    if ($mc.groups.count -gt 0){
+        return "* [[$($page.title)]] ($($mc.groups.count))`n"
+    } else {
+        return ""
+    }
+}
+
+# returns wikicode
+function CheckWikipages-SourceRequest-Single {
+    param (
+        $page = @(),
+        $pagesNoSourcesAtAll = @()
+    )
+    # HACK!
+    $pagesNoSourcesAtAll = $global:pagesNoSourcesAtAll
+     
+    if ((($page.content -match "{{rq\|[^\}]{0,20}sources[\|}]") -or
+             ($page.content -match "{{Нет источников\|") -or
+             ($page.content -match "{{Нет ссылок\|")) -and
+            ($page.Title -notin $pagesNoSourcesAtAll))
+    {
+        return "* [[$($page.title)]]`n"
+    } else {
+        return ""
+    }
+}
+
+
 

@@ -19,7 +19,6 @@
 {% endif %}
 {% endfor %}{% endif %}
 {% endfor %}
-
 {% endif %}{% endfor %}
 == Статистика ==
 
