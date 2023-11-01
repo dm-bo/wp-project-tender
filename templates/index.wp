@@ -1,15 +1,20 @@
-{% if prologue %}{{ prologue }}{% endif %}
+{% if prologue %}{{ prologue }}
+{% endif %}
+{% if viet_pages_not_patrolled %}
 == Не отпатрулированные статьи ==
-{% if viet_pages_not_patrolled %}{% for page in viet_pages_not_patrolled %}* [[{{page}}]] вообще не патрулировалась
-{% endfor %}{% endif %}{% if viet_pages_old_patrolled %}{% for page in viet_pages_old_patrolled %}* [[{{page.title}}]] не патрулировалась с {{page.date}}
+{% for page in viet_pages_not_patrolled %}
+* [[{{page}}]] вообще не патрулировалась
+{% endfor %}{% endif %}
+{% if viet_pages_old_patrolled %}{% for page in viet_pages_old_patrolled %}
+* [[{{page.title}}]] не патрулировалась с {{page.date.strftime('%Y-%m-%d')}}
 {% endfor %}{% endif %}
 
 == Недостатки статей ==
-{% for check in checks %}{% if check.counter %}
+{% for check in checks %}{% if not check.supress_listing %}{% if check.counter %}
 === {{ check.title }} ===
 {{ check.descr }}
 {% for page in check.pages %}
-* [[{{ page.title }}]]{% if page.counter %} ({{ page.counter }}){% endif %}
+* [[{{ page.title }}]]{% if page.counter %} ({{ page.counter }}){% endif %}{% if page.note %} {{ page.note }}{% endif %}
 
 {% if page.samples|length > 0 %}{% for sample in page.samples %}
 {% if check.nowiki %}
@@ -17,22 +22,20 @@
 {% else %}
 ** {{ sample }}
 {% endif %}
-{% endfor %}{% endif %}
-{% endfor %}
-{% endif %}{% endfor %}
+{% endfor %}{% endif %}{# for problem sample #}
+{% endfor %}{# for problem page #}
+{% endif %}{% endif %}{% endfor %}{# for check #}
 == Статистика ==
-
-{| class=`"wikitable`"
+{| class="wikitable"
 !
 !кол-во
 !%
-{% for check in checks %}
+{% for check in checks %}{% if not check.supress_stat %}
 |-
-| {{ check.name }}
-| {{ check.counter }}
-{# | {{ "{:,.2f}".format(check.percent) }} % #}
-| {{ '%0.2f'|format(check.percent) }} %
-{% endfor %}
+|{{ check.title }}
+|<!-- statValue:{{ check.name }} -->{{ check.counter }}
+|<!-- statPercent:{{ check.name }} -->{{ '%0.2f'|format(check.percent) }} %
+{% endif %}{% endfor %}
 |}
 
 На этом всё.

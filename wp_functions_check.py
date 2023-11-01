@@ -1,17 +1,20 @@
 import re
 
+from wp_functions_aux import get_wp_page_sections, get_date_format
+
 class ProblemPage(object):
-    def __init__(self, title="", counter=None, samples=[]):
+    def __init__(self, title="", counter=None, samples=[], note=""):
         self.title = title
+        self.note = note
         self.counter = counter
         self.samples = samples
     def __repr__(self):
-        return '[[{}]] ({})>'.format(self.title, len(self.samples))
+        return '[[{}]] ({} hits, {} samples)'.format(self.title, self.counter, len(self.samples))
 
 def check_wp_pages_square_km(viet_pages_content):
     result = []
     for page in viet_pages_content:
-        mc = re.findall(r"кв. км", page['content'])
+        mc = re.findall(r"кв[.]? км", page['content'])
         mc += re.findall(r"кв км", page['content'])
         if mc:
             next_problem = ProblemPage(title=page['title'])
@@ -37,7 +40,21 @@ def check_wp_pages_bot_archives(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(mc)))
     return result
 
-# TODO Communes
+def check_wp_communes(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        if page['title'] == "Пиньо де Беэн, Пьер":
+            continue
+        samples = []
+        mc = re.findall(r"[^\n ]{0,8}коммун[^\n ]{0,5}", page['content'])
+        for m in mc:
+            if not re.search(r"коммуни", m) and \
+              not re.search(r"коммунал", m) and \
+              not re.search(r"общин[а-я]{0,2}-коммун", m):
+                samples.append(m)
+        if samples:
+            result.append(ProblemPage(title=page['title'],counter=len(samples)))
+    return result
 
 def check_wp_pages_direct_googlebooks(viet_pages_content):
     result = []
@@ -90,7 +107,16 @@ def check_wp_isolated(viet_pages_content):
             result.append(ProblemPage(title=page['title']))
     return result
 
-# TODO LinksUnanvailable
+def check_wp_links_unavailable(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"{{[Нн]едоступная ссылка", page['content'])
+        # mc = re.findall(r"(http[s]?://[^ \|]*)(?:(?!http[s]?://).)*{{Недоступная ссылка", page['content'])
+        if mc:
+            rx = r"(http[s]?://[^ \|]*)(?:(?!http[s]?://).)*{{Недоступная ссылка"
+            result.append(ProblemPage(title=page['title'],counter=len(mc),
+              samples=re.findall(rx, page['content'])))
+    return result
 
 def check_wp_naked_links(viet_pages_content):
     result = []
@@ -98,7 +124,7 @@ def check_wp_naked_links(viet_pages_content):
         mc = re.findall(r"\[http[^ ]*\]", page['content'])
         mc += re.findall(r"[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+", page['content'])
         if mc:
-            result.append(ProblemPage(title=page['title'],counter=len(mc),samples=mc))
+            result.append(ProblemPage(title=page['title'],samples=mc))
     return result
 
 def check_wp_no_cats(viet_pages_content):
@@ -125,10 +151,10 @@ def check_wp_no_links_in_links(viet_pages_content):
     for page in viet_pages_content:
         if re.search(r"==[ ]*Ссылки[ ]*==", page['content']) and \
           not re.search(r"http[s]{0,1}://", page['content']) and \
-          not re.search(r"{{ВС}}", page['content']) and \
+          not re.search(r"{{ВС}}", page['content'], re.IGNORECASE) and \
           not re.search(r"{{WAD\|", page['content']) and \
           not re.search(r"{{ВТ-ЭСБЕ\|", page['content']) and \
-          not re.search(r"{{IMDb name\|", page['content']) and \
+          not re.search(r"{{IMDb name\|", page['content'], re.IGNORECASE) and \
           not re.search(r"{{IMDb title\|", page['content']) and \
           not re.search(r"{{Шахматные ссылки[ \n]*\|", page['content']) and \
           not re.search(r"{{ЭЕЭ[ \n]*\|", page['content']) and \
@@ -152,7 +178,55 @@ def check_wp_no_refs(viet_pages_content):
             result.append(ProblemPage(title=page['title']))
     return result
 
-# TODO many
+def check_wp_no_sources(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        if not re.search(r"<ref[ >]", page['content']) and \
+          not re.search(r"{{sfn\|", page['content']) and \
+          not re.search(r"==[ ]*Ссылки[ ]*==", page['content']) and \
+          not re.search(r"==[ ]*Литература[ ]*==", page['content']) and \
+          not re.search(r"==[ ]*Источники[ ]*==", page['content']) and \
+          not re.search(r"{{IMDb name\|", page['content']):
+            result.append(ProblemPage(title=page['title']))
+    return result
+
+def check_wp_poor_dates(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        bad_dates = []
+        mc = re.findall(r"{{[cC]ite web[^{}]+(?:{{[^}]+}})*[^{}]+}}", page['content'])
+        for m in mc:
+            cite_dates = re.findall("\|[ ]*archive[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
+            cite_dates += re.findall("\|[ ]*date[ ]*=[ ]*([^\|\n}]*)", m)
+            # TODO to activate in feature release
+            #cite_dates += re.findall("\|[ ]*access[-]?date[ ]*=[ ]*([^\|\n}]*)")
+            for cite_date in cite_dates:
+                if not get_date_format(cite_date.strip()):
+                    bad_dates.append(cite_date.strip())
+        if bad_dates:
+            result.append(ProblemPage(title=page['title'], note=f"({'; '.join(bad_dates)})"))
+    return result
+
+def check_wp_ref_templates(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"{{ref-[a-zA-Z]{2}[\|} ]", page['content'])
+        if mc:
+            result.append(ProblemPage(title=page['title'],counter=len(mc)))
+    return result
+
+def check_wp_semicolon_sections(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        has_semi = False
+        sections = get_wp_page_sections(page['content'])
+        for section in sections:
+            if re.search(r"\n;", section['content']) and \
+              not re.search(r"Литература|Примечания|Источники", section['name']):
+                has_semi = True
+        if has_semi:
+            result.append(ProblemPage(title=page['title']))
+    return result
 
 # TODO also need check commas, colons etc.
 def check_wp_SNPREP(viet_pages_content):
@@ -173,17 +247,43 @@ def check_wp_SNPREP(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(samples)))
     return result
 
-def check_wp_source_request(viet_pages_content):
+# TODO simplify
+def check_wp_source_request(viet_pages_content, excludings):
     result = []
     for page in viet_pages_content:
-        mc = re.findall(r"{{rq\|[^\}]{0,20}sources[\|}]", page['content'])
-        mc += re.findall(r"{{Нет источников\|", page['content'])
-        mc += re.findall(r"{{Нет ссылок\|", page['content'])
-        if mc:
+        mc = re.findall(r"{{rq\|[^\}]{0,20}sources[\|}]", page['content'], re.IGNORECASE)
+        mc += re.findall(r"{{Нет источников\|", page['content'], re.IGNORECASE)
+        mc += re.findall(r"{{Нет ссылок\|", page['content'], re.IGNORECASE)
+        if mc and not page['title'] in excludings:
             result.append(ProblemPage(title=page['title']))
     return result
 
+def check_wp_template_regexp(viet_pages_content, template):
+    result = []
+    for page in viet_pages_content:
+        my_regex = r"{{" + template + r"[ \n]*\||{{" + template + r"[ \n]*}}"
+        mc = re.findall(my_regex, page['content'], re.IGNORECASE)
+        if mc:
+            result.append(ProblemPage(title=page['title'],counter=len(mc)))
+    return result
 
+def check_wp_too_few_wikilinks(viet_pages_content):
+    result = []
+    TOO_LOW = 0.9
+    TOO_HIGH = 20
+    for page in viet_pages_content:
+        if len(page['content'].encode('utf-8')) > 20480:
+            mc = re.findall(r"\[\[[^\]:]*\]\]", page['content'])
+            linksPerKB = 1024 * len(mc) / len(page['content'].encode('utf-8'))
+            linksPerKB_str = "{:0.2f}".format(linksPerKB)
+            if linksPerKB > TOO_HIGH:
+                result.append(ProblemPage(title=page['title'], note=f"{linksPerKB_str}, " + \
+                    f"({len(mc)}/{len(page['content'].encode('utf-8'))}) — а здесь наоборот, " + \
+                    "слишком много"))
+            if linksPerKB < TOO_LOW:
+                result.append(ProblemPage(title=page['title'],
+                    note=f"({linksPerKB_str}, {len(mc)}/{len(page['content'].encode('utf-8'))})"))
+    return result
 
 ###
 
