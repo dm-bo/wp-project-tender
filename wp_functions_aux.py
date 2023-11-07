@@ -125,8 +125,8 @@ def get_wp_internal_links(viet_pages_content):
             for m in mc:
                 links_ololo.append(OloloLink(m, page['title']))
                 links_ololo_arr.append({'link': m, 'page': page['title']})
-        if divmod(i, 10)[1] == 0:
-            print("Extracting wikilinks:", i, "/", len(viet_pages_content), "pages processed")
+        #if divmod(i, 10)[1] == 0:
+        #    print("Extracting wikilinks:", i, "/", len(viet_pages_content), "pages processed")
     return links_ololo
     #return links_Ololo_arr
 
@@ -151,3 +151,75 @@ def get_date_format(date_str):
       re.search(r"^[0-9]{4}-[0-9]{2}$", date_str) or \
       re.search(r"^[0-9]{4}$", date_str) or \
       re.search(r"^$", date_str)
+
+def get_wp_authentication_status(session):
+    URL = "https://ru.wikipedia.org/w/api.php"
+    PARAMS_0 = {
+        "action": "query",
+        "meta": "userinfo",
+        "format": "json"
+    }
+    if not hasattr(session, 'get'):
+        return False
+    response = session.get(url=URL, params=PARAMS_0)
+    #print(response.json()['query']['userinfo'])
+    if response.json()['query']['userinfo']['id']:
+        return True
+    return False
+
+def get_wp_authenticated_session(login, password):
+    session = requests.Session()
+    URL = "https://ru.wikipedia.org/w/api.php"
+    PARAMS_1 = {
+        'action': "query",
+        'meta':   "tokens",
+        'type':   "login",
+        'format': "json"
+    }
+    response = session.get(url=URL, params=PARAMS_1)
+    # print(response.json()['query']['tokens'])
+    login_token = response.json()['query']['tokens']['logintoken']
+    
+    PARAMS_2 = {
+        'action':     "login",
+        'lgname':     login,
+        'lgpassword': password,
+        'lgtoken':    login_token,
+        'format':     "json"
+    }
+
+    response = session.post(url=URL, data=PARAMS_2)
+    # print(response.json())
+    if get_wp_authentication_status(session):
+        return session
+    return False
+
+def set_wp_page_text(session, title, text, summary):
+    if not get_wp_authentication_status(session):
+        print("Session is not authenticated! Aborting.")
+        return False
+    URL = "https://ru.wikipedia.org/w/api.php"
+    PARAMS_4 = {
+        "action": "query",
+        "meta":   "tokens",
+        "format": "json"
+    }
+    response = session.get(url=URL, params=PARAMS_4)
+    csrf_token = response.json()['query']['tokens']['csrftoken']
+
+    # POST request to edit a page
+    PARAMS_5 = {
+        "action":   "edit",
+        "title":    title,
+        "token":    csrf_token,
+        "text":     text,
+        "summary":  summary,
+        "nocreate": 1,
+        "format":   "json"
+    }
+
+    response = session.post(url=URL, data=PARAMS_5)
+    if response.json()['edit']['result'] == "Success":
+        return True
+    print(response.json()['edit'])
+    return False

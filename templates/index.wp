@@ -1,6 +1,11 @@
+{% if updates %}<!-- Обновления:
+{% for update in updates %}* {{ update }}
+{% endfor %}
+-->
+{% endif %}
 {% if prologue %}{{ prologue }}
 {% endif %}
-{% if viet_pages_not_patrolled %}
+{% if viet_pages_not_patrolled or viet_pages_old_patrolled %}
 == Не отпатрулированные статьи ==
 {% for page in viet_pages_not_patrolled %}
 * [[{{page}}]] вообще не патрулировалась
@@ -43,6 +48,6 @@
 Отзывы и предложения, пожалуйста, пишите сюда: [[Обсуждение участника:Klientos]].
 
 <!-- Чтобы отключить обновление этой страницы, удалите всё ниже: -->
-<!-- {{ '{{' }}User:Klientos/project-tender |timestamp={{ timestamp }} {{ '}}' }} -->
+<!-- {{ '{{' }}User:KlientosBot/project-tender |timestamp={{ timestamp }} {{ '}}' }} -->
 
 {% block content %}{% endblock %}

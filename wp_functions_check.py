@@ -137,6 +137,7 @@ def check_wp_no_cats(viet_pages_content):
           not re.search(r"{{[Аа]ктриса\|", page['content']) and \
           not re.search(r"{{историк\|", page['content']) and \
           not re.search(r"{{археолог\|", page['content']) and \
+          not re.search(r"{{композитор\|", page['content'], re.IGNORECASE) and \
           not re.search(r"{{список однофамильцев}}", page['content']) and \
           not re.search(r"{{Мосты Вологды}}", page['content']) and \
           not re.search(r"{{Улица Екатеринбурга[ \n]*\|", page['content']) and \
@@ -162,7 +163,7 @@ def check_wp_no_links_in_links(viet_pages_content):
           not re.search(r"{{Сотрудник РАН[ \n]*\|", page['content']) and \
           not re.search(r"{{Math-Net.ru[ \n]*\|", page['content']) and \
           not re.search(r"{{oopt.aari.ru[ \n]*\|", page['content']) and \
-          not re.search(r"{{Warheroes[ \n]*\|", page['content']) and \
+          not re.search(r"{{Warheroes[ \n]*\|", page['content'], re.IGNORECASE) and \
           not re.search(r"{{SportsReference[ \n]*\|", page['content']) and \
           not re.search(r"{{DNB-Portal[ \n]*\|", page['content']) and \
           not re.search(r"{{DDB[ \n]*\|", page['content']):
@@ -176,6 +177,12 @@ def check_wp_no_refs(viet_pages_content):
           not re.search(r"<ref", page['content']) and \
           not re.search(r"{{sfn", page['content']):
             result.append(ProblemPage(title=page['title']))
+            # print(page['title'], "— bad notes, len", len(page['content']))
+            # print(bool(re.search(r"==[ ]*Примечания[ ]*==", page['content'])))
+            # print(bool(not re.search(r"<ref", page['content'])))
+            # # if re.search(r"<ref", data):
+                # # print("(this is true)")
+            # print(bool(not re.search(r"{{sfn", page['content'])))
     return result
 
 def check_wp_no_sources(viet_pages_content):
@@ -199,7 +206,7 @@ def check_wp_poor_dates(viet_pages_content):
             cite_dates = re.findall("\|[ ]*archive[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
             cite_dates += re.findall("\|[ ]*date[ ]*=[ ]*([^\|\n}]*)", m)
             # TODO to activate in feature release
-            #cite_dates += re.findall("\|[ ]*access[-]?date[ ]*=[ ]*([^\|\n}]*)")
+            cite_dates += re.findall("\|[ ]*access[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
             for cite_date in cite_dates:
                 if not get_date_format(cite_date.strip()):
                     bad_dates.append(cite_date.strip())
