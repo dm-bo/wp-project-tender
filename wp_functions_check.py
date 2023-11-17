@@ -205,6 +205,7 @@ def check_wp_poor_dates(viet_pages_content):
         for m in mc:
             cite_dates = re.findall("\|[ ]*archive[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
             cite_dates += re.findall("\|[ ]*date[ ]*=[ ]*([^\|\n}]*)", m)
+            cite_dates += re.findall("\|[ ]*datepublished[ ]*=[ ]*([^\|\n}]*)", m)
             # TODO to activate in feature release
             cite_dates += re.findall("\|[ ]*access[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
             for cite_date in cite_dates:

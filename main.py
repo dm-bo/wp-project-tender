@@ -5,6 +5,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content, get_wp_page_sections
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
+from wp_functions_aux import get_disambigs
 from wp_functions_check import *
 
 from wp_auth_data import *
@@ -29,6 +30,8 @@ class Check():
         # self.name = name
         # self.title = title
 
+moment_start = datetime.datetime.now()
+dis_or_not = {}
 session = get_wp_authenticated_session(wp_login, wp_passw)
 
 UPDATES = [
@@ -38,15 +41,21 @@ UPDATES = [
      'text': "Скрипт переведён на python. Возможны некоторые изменения в формате выдачи, " + \
         "сортировке и результатах проверок."},
     {'date': datetime.datetime(2023, 11, 6, 23, 12),
-     'text': "Добавлена проверка неформатных дат в accessdate/access-date"}
+     'text': "Добавлена проверка неформатных дат в accessdate/access-date"},
+    {'date': datetime.datetime(2023, 11, 14, 23, 20),
+     'text': "Добавлена проверка неформатных дат в datepublished (алиас для date)"},
+    {'date': datetime.datetime(2023, 11, 14, 23, 40),
+     'text': "Теперь можно добавлять произвольный текст в конец страницы (например, категории)"},
+    {'date': datetime.datetime(2023, 11, 15, 18, 00),
+     'text': "Добавлен поиск ссылок на страницы неоднозначностей."}
 ]
 
-AREAS = [ "Tatarstan" ]
-# ready: 
-# "Holocaust", , "Israel", , 
-# already 
-# "Vietnam", "Karelia", "Cybersport", "Belarus", "Vologda", "SverdlovskObl"
 AREAS = [  ]
+# ready: 
+# "Holocaust", , "Israel", 
+# already 
+# "Vietnam", "Karelia", "Cybersport", "Belarus", "Vologda", "SverdlovskObl", "Tatarstan"
+AREAS = [ "Vologda" ]
 
 ###############################
 ###### ITERATE FROM HERE ######
@@ -59,15 +68,25 @@ for area in AREAS:
     # output_file = f"C:\Users\Dm\Desktop\wp\badlinks-{area}.py.txt"
     output_file = f"C:/Users/Dm/Desktop/wp/badlinks-{area}.py.txt"
     prologue = ""
+    epilogue = ""
     post_results = False
     post_results_page = ""
+    pages_limit = 5000
     summary = "плановое обновление данных"
     checks_enabled = {
         "CiteDecorations": True,
         "Communes": False,
-        "Experimental": False
+        "Experimental": False,
+        "Disambigs": False
     }
     time_cooldown = 5
+
+    # result disambigs
+    disambigs = []
+    # result ugly redirects
+    long_redirects = []
+    # maybe we'll need this info (not yet)
+    cannot_check = []
 
     # FIXME тупо перенесено почти 1:1
 
@@ -75,13 +94,18 @@ for area in AREAS:
         post_results = True
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вологда", 1)
         post_results_page = "Проект:Вологда/Недостатки статей"
+        checks_enabled["Disambigs"] = True
     elif area == "Vietnam":
-        post_results = True
+        # post_results = True
+        time_cooldown = 0
+        #pages_limit = 200
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вьетнам", 1)
         checks_enabled["Communes"] = True
         checks_enabled["Experimental"] = True
+        checks_enabled["Disambigs"] = True
         post_results_page = "Участник:Klientos/Ссылки проекта Вьетнам"
     elif area == "Holocaust":
+        post_results = True
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Холокост", 1)
         checks_enabled["CiteDecorations"] = False
         prologue = "Исправленные проблемы просьба убирать из списка!"
@@ -92,12 +116,15 @@ for area in AREAS:
         checks_enabled["CiteDecorations"] = False
         post_results_page = "Проект:Белоруссия/Недостатки статей"
     elif area == "Israel":
+        post_results = True
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Израиль", 1)
         checks_enabled["CiteDecorations"] = False
         post_results_page = "Проект:Израиль/Недостатки статей"
     elif area == "SverdlovskObl":
+        # TODO категория проекта
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Свердловская область", 1)
         post_results_page = "Проект:Свердловская область/Недостатки статей"
+        epilogue = "[[Категория:Проект:Свердловская область]]"
     elif area == "Tatarstan":
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Татарстан", 1)
         post_results_page = "Проект:Татарстан/Недостатки статей"
@@ -130,9 +157,9 @@ for area in AREAS:
     print("==========")
     print("Working on", area)
 
-    print("First was", len(viet_pages))
+    print("Total pages found:", len(viet_pages))
     viet_pages = list(set(viet_pages) - set(exclude_pages))
-    print("Then", len(viet_pages))
+    print("After omitting some pages:", len(viet_pages))
 
     time_threshold = datetime.datetime.now() - datetime.timedelta(days=time_cooldown)
     result_content = get_wp_pages_content([post_results_page])
@@ -168,7 +195,7 @@ for area in AREAS:
     ### Patrolling ####
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
-        get_wp_pages_content(viet_pages=viet_pages)
+        get_wp_pages_content(viet_pages=viet_pages,limit=pages_limit)
     #print("Total pages retrieved:", len(viet_pages_content), "of", len(viet_pages))
     #print("Not patrolled:", len(viet_pages_old_patrolled), "and", len(viet_pages_not_patrolled))
     checks.append(Check(
@@ -574,6 +601,102 @@ for area in AREAS:
         supress_stat=True)
     )
 
+    ### Search for disambigs ###
+    # TODO rewrite this
+    if checks_enabled["Disambigs"]:
+        i = 0
+        batch_size = 20
+        batch_unknown = []
+        for il in internal_links:
+            i = i + 1
+            il.link = il.link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
+            il.link = re.sub("#.*$","", il.link)
+            if il.link == "":
+                # in case of [[#smth]]
+                pass
+            elif not il.link in dis_or_not:
+                batch_unknown.append(il)
+            elif dis_or_not[il.link]:
+                disambigs.append(il)
+            if len(batch_unknown) > batch_size:
+                print("Checker invoked", i, "/", len(internal_links))
+                dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
+                dis_or_not.update(dis_or_not_append)
+                long_redirects = long_redirects + long_redirects_append
+                for ib in batch_unknown:
+                    ib2 = ib.link[0].upper() + ib.link[1:]
+                    ib2 = ib2.replace(" "," ").replace("  "," ").replace("_"," ").strip()
+                    ib2 = re.sub("#.*$","", ib2)
+                    if not ib2 in dis_or_not:
+                        cannot_check.append(ib)
+                    elif dis_or_not[ib2]:
+                        disambigs.append(ib)
+                batch_unknown = []
+        disambig_ordered = {}
+        for da in disambigs:
+            if not da.page in disambig_ordered:
+                disambig_ordered[da.page] = {}
+            if not da.link in disambig_ordered[da.page]:
+                disambig_ordered[da.page][da.link] = True
+            #disambig_ordered[da.page][da.link] = disambig_ordered[da.page][da.link] + 1
+        disambig_problems = []
+        for i_p, key_p in enumerate(disambig_ordered):
+            samples = []
+            for i_l, key_l in enumerate(disambig_ordered[key_p]):
+                samples.append(f'[[{key_l}]]')
+            disambig_problems.append(ProblemPage(title=key_p, \
+              samples=samples))
+        #print("creating check for", len(disambig_problems), "problems", disambig_problems)
+        checks.append(Check(
+            name="BadLinks",
+            title="Ссылки на неоднозначности",
+            descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
+            pages=disambig_problems,
+            total=len(viet_pages))
+        )
+        # side-product
+        long_redirects_set = set(long_redirects)
+        long_redirects = list(long_redirects_set)
+        # TODO construct Problems (now only the page list)
+        # checks.append(Check(
+            # name="UncheckableLinks",
+            # title="Непроверяемые внутренние ссылки",
+            # descr="Внутренние ссылки, для которых не получилось определить, редирерект это или нет. " + \
+              # "Возможно, с ними что-то не так; надо проверить.",
+            # pages=cannot_check,
+            # total=len(internal_links))
+        # )
+        # print("Long redirects are", long_redirects)
+        long_redirecting_pages = []
+        for il in internal_links:
+            if il.link in long_redirects:
+                long_redirecting_pages.append(il)
+        # print("Long redirects pages are", long_redirecting_pages)
+        # TODO rewrire as function (for 3 calls)
+        long_redirects_ordered = {}
+        for lr in long_redirecting_pages:
+            if not lr.page in long_redirects_ordered:
+                long_redirects_ordered[lr.page] = {}
+            if not lr.link in long_redirects_ordered[lr.page]:
+                long_redirects_ordered[lr.page][lr.link] = True
+        # print("Long redirects ordered are", long_redirects_ordered)
+        long_redirects_problems = []
+        for i_p, key_p in enumerate(long_redirects_ordered):
+            samples = []
+            for i_l, key_l in enumerate(long_redirects_ordered[key_p]):
+                samples.append(f'[[{key_l}]]')
+            long_redirects_problems.append(ProblemPage(title=key_p, \
+              samples=samples))
+        # print("Long redirects problems are", long_redirects_problems)
+        checks.append(Check(
+            name="UglyRedirects",
+            title="Громоздкие редиректы",
+            descr="Длинные, некрасивые, избыточные редиректы. Такой редирект можно заменить " + \
+              "прямой ссылкой на саму статью.<!-- Побочный продукт от поиска дизамбигов -->",
+            pages=long_redirects_problems,
+            total=len(viet_pages))
+        )
+
     # End of checks
 
     ### Rendering ###
@@ -585,6 +708,7 @@ for area in AREAS:
 
     content = template.render(
         prologue = prologue,
+        epilogue = epilogue,
         viet_pages_not_patrolled = viet_pages_not_patrolled,
         viet_pages_old_patrolled = viet_pages_old_patrolled,
         checks = checks,
@@ -610,3 +734,8 @@ for area in AREAS:
     with open(output_file, mode="w", encoding="utf-8") as message:
         message.write(content)
         print(f"... wrote {output_file}")
+    
+    
+    ### Stats ###
+    print("Checked", len(dis_or_not), "of", len(internal_links))
+    print(datetime.datetime.now()-moment_start)

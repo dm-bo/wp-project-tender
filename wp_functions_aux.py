@@ -38,7 +38,7 @@ def get_wp_pages_by_template(template, namespace):
             have_data_to_get = False
     return sorted(result)
 
-def get_wp_pages_content(viet_pages):
+def get_wp_pages_content(viet_pages,limit=10000):
     batch_size = 10
     viet_pages_content = []
 
@@ -61,17 +61,16 @@ def get_wp_pages_content(viet_pages):
         next_batch.append(vp)
         # if j > 20:
             # break
-        # if j > 100:
-            # break
+        if j > limit:
+            break
         if len(next_batch) == batch_size or j == len(viet_pages):
             PARAMS_batch = PARAMS_0
             PARAMS_batch['titles'] = '|'.join(next_batch) #.replace("&","%26")
             #PARAMS_batch['titles'] = 'Олонец'
             response = session.get(url=api_url, params=PARAMS_0)
             for page in response.json()['query']['pages']:
-                #print(page)
-                #print(page.keys())
-                # patrolling
+                # if re.search(r"Постановление", page['title']):
+                    # print(page)
                 if not 'flagged' in page.keys():
                     viet_pages_not_patrolled.append(page['title'])
                     #print("Not flagged", page['title'])
@@ -219,7 +218,164 @@ def set_wp_page_text(session, title, text, summary):
     }
 
     response = session.post(url=URL, data=PARAMS_5)
+    print(response.json())
     if response.json()['edit']['result'] == "Success":
         return True
     print(response.json()['edit'])
     return False
+
+def get_wp_categories(pagenames):
+    api_url = "http://ru.wikipedia.org/w/api.php"
+    pagenames_batch = '|'.join(pagenames)
+    # TODO change 500 to MAXLIMIT
+    PARAMS_0 = {
+        'action': "query",
+        'formatversion':   2,
+        'prop':   "categories",
+        'cllimit': 500,
+        'titles': pagenames_batch,
+        'format': "json"
+    }
+    session = requests.Session()
+    result_dict = {}
+    result = []
+    have_data_to_get = True
+    pages_missing = []
+    PARAMS_1 = PARAMS_0
+    while have_data_to_get:
+        cat_len_tot = 0
+        #time.sleep(3)
+        response = session.get(url=api_url, params=PARAMS_1)
+        pages_dict = response.json()['query']["pages"]
+        #first_set = list(pages_dict)[0]
+        #print(pages_dict)
+        for page in response.json()['query']["pages"]:
+            # print("===", page['title'], "===")
+            if not page['title'] in result_dict:
+                result_dict[page['title']] = []
+            if 'categories' in page.keys():
+                for cat in page['categories']:
+                    # print(cat['title'])
+                    result_dict[page['title']].append(cat['title'])
+                cat_len = len(page['categories'])
+                cat_len_tot = cat_len_tot + cat_len
+                # print("Len:", cat_len, ", total:", cat_len_tot)
+            if 'missing' in page.keys():
+                #print("Missing page:", page['title'])
+                pages_missing.append(page['title'])
+            #print(result_dict)
+        if 'continue' in response.json().keys():
+            print("Let's continue cats!")
+            print(response.json()['continue'])
+            PARAMS_1 = dict(list(PARAMS_0.items()) + list(response.json()['continue'].items()))
+            have_data_to_get = True
+        else:
+            have_data_to_get = False
+    for i_p, key_p in enumerate(result_dict):
+        page_cats = {
+            "title": key_p,
+            "categories": result_dict[key_p],
+            "missing": key_p in pages_missing
+        }
+        result.append(page_cats)
+    return(result)
+
+def get_disambigs(dis_pages):
+    result = {}
+    redirects = []
+    long_redirects = []
+    # $disPageBatch = ($batchUnknown.link | % {$_ -replace "#.*"}) -join "|" -replace "&","%26" -replace "\+","%2B"
+    dis_page_names = []
+    for dis_page in dis_pages:
+        dis_page_names.append(dis_page.link)
+    # dis_page_batch = '|'.join(dis_page_names)
+    session = requests.Session()
+    URL = "https://ru.wikipedia.org/w/api.php"
+    # PARAMS_1 = {
+        # 'action': "query",
+        # 'formatversion':   2,
+        # 'prop':   "categories",
+        # 'cllimit': 1000,
+        # 'titles': dis_page_batch,
+        # 'format': "json"
+    # }
+    # response = session.get(url=URL, params=PARAMS_1)
+    # for mb_page in response.json()['query']['pages']:
+    for mb_page in get_wp_categories(dis_page_names):
+        #if "categories" in mb_page.keys():
+        if len(mb_page["categories"]):
+            try:
+                result[mb_page['title']] = "Категория:Страницы значений по алфавиту" in mb_page['categories']
+            except:
+                print(mb_page)
+                exit(5)
+        else:
+            #if "missing" in mb_page.keys():
+            if mb_page['missing']:
+                result[mb_page['title']] = False
+            else:
+                redirects.append(mb_page['title'])
+                # print("redirect:", mb_page['title'])
+    if not len(redirects):
+        # print("no redirects to check,", redirects)
+        return result,[]
+    print("Invoke redirect checker for", len(redirects), "pages")
+    # Resolve redirects
+    redirect_targets = []
+    redirect_pairs = []
+    for rd in redirects:
+        PARAMS_2 = {
+            'action': "query",
+            'formatversion':   2,
+            'redirects': True,
+            'titles': rd,
+            'format': "json"
+        }
+        response2 = session.get(url=URL, params=PARAMS_2)
+        try:
+            redirect_target = response2.json()['query']['redirects'][0]['to']
+        except KeyError:
+            print("======== KeyError while resolving redirect ==========!!!")
+            # print(response.json())
+            # print("==================")
+            print(response2.json())
+            print(dis_page_names)
+            print("^^^^^^ Skipping this, go to next redir.")
+            exit(2)
+            continue
+        redirect_targets.append(redirect_target)
+        redirect_pair = {
+            'from': rd,
+            'to': redirect_target
+        }
+        redirect_pairs.append(redirect_pair)
+        #print(rd, "redirects to", redirect_target)
+        if re.search(r"\(.*\)", rd) and \
+          not re.search(r"\(.*\)", redirect_target) and \
+          len(rd) > len(redirect_target):
+            #print("^^^^^^ That was a bad redirect! ^^^^^^^")
+            long_redirects.append(rd)
+            #print("Now long redirs is", long_redirects)
+    PARAMS_3 = {
+        'action': "query",
+        'formatversion':   2,
+        'prop':   "categories",
+        'cllimit': 1000,
+        'titles': '|'.join(redirect_targets),
+        'format': "json"
+    }
+    response = session.get(url=URL, params=PARAMS_3)
+    #print(mb_page)
+    for mb_page in response.json()['query']['pages']:
+        if "categories" in mb_page.keys():
+            is_disambig = any(x['title'] == "Категория:Страницы значений по алфавиту" for x in mb_page['categories'])
+        else:
+            print("------------skipping faulty page", mb_page['title'])
+            is_disambig = False
+        result[mb_page['title']] = is_disambig
+        for pair in redirect_pairs:
+            if pair['to'] == mb_page['title']:
+                result[pair['from']] = is_disambig
+    return result,long_redirects
+
+        
