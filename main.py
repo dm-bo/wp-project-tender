@@ -52,10 +52,10 @@ UPDATES = [
 
 AREAS = [  ]
 # ready: 
-# "Holocaust", , "Israel", 
+# "Holocaust", , "Israel", "Christianity" , "Bible", "India"
 # already 
 # "Vietnam", "Karelia", "Cybersport", "Belarus", "Vologda", "SverdlovskObl", "Tatarstan"
-AREAS = [ "Vologda" ]
+AREAS = [ "Mythology" ]
 
 ###############################
 ###### ITERATE FROM HERE ######
@@ -91,14 +91,14 @@ for area in AREAS:
     # FIXME тупо перенесено почти 1:1
 
     if area == "Vologda":
-        post_results = True
+        # post_results = True
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вологда", 1)
         post_results_page = "Проект:Вологда/Недостатки статей"
         checks_enabled["Disambigs"] = True
     elif area == "Vietnam":
-        # post_results = True
+        post_results = True
         time_cooldown = 0
-        #pages_limit = 200
+        #pages_limit = 20
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вьетнам", 1)
         checks_enabled["Communes"] = True
         checks_enabled["Experimental"] = True
@@ -134,6 +134,22 @@ for area in AREAS:
     elif area == "Cybersport":
         viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Киберспорт", 1)
         post_results_page = "Проект:Киберспорт/Недостатки статей"
+    elif area == "Bible":
+        post_results = True
+        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Библия", 1)
+        post_results_page = "Проект:Библия/Недостатки статей"
+        checks_enabled["Disambigs"] = True
+    elif area == "Christianity":
+        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Христианство", 1)
+        post_results_page = "Проект:Христианство/Недостатки статей"
+    elif area == "India":
+        post_results = True
+        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Индия", 1)
+        post_results_page = "Проект:Индия/Недостатки статей"
+    elif area == "Mythology":
+        post_results = True
+        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Мифология", 1)
+        post_results_page = "Проект:Мифология/Недостатки статей"
 
         # } elseif ($area -like "Astronomy") {
             # $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
@@ -588,7 +604,8 @@ for area in AREAS:
     I_LIMIT = 20
     i = 0
     for date_page in sorted(sorted_counted_dates, key=lambda x: x['count'], reverse=True):
-        if i < I_LIMIT and not re.search(r"^Хронология ", date_page['page']):
+        if i < I_LIMIT and not re.search(r"^Хронология ", date_page['page']) and \
+          not re.search(r"^Список ", date_page['page']):
             i = i + 1
             #print(f"* [[{date_page['page']}]] ({date_page['count']})")
             final_dates.append(ProblemPage(title=date_page['page'],counter=date_page['count']))
@@ -606,6 +623,9 @@ for area in AREAS:
     if checks_enabled["Disambigs"]:
         i = 0
         batch_size = 20
+        # set by Wikipedia
+        batch_hard_limit = 50
+        batch_length = 1300
         batch_unknown = []
         for il in internal_links:
             i = i + 1
@@ -618,10 +638,17 @@ for area in AREAS:
                 batch_unknown.append(il)
             elif dis_or_not[il.link]:
                 disambigs.append(il)
-            if len(batch_unknown) > batch_size:
-                print("Checker invoked", i, "/", len(internal_links))
+            #if len(batch_unknown) > batch_size:
+            if sum(len(s.link) for s in batch_unknown) > batch_length or \
+              len(batch_unknown) >= batch_hard_limit:
+                print("Checker invoked", i, "/", len(internal_links), "( len", sum(len(s.link) for s in batch_unknown), ", items", len(batch_unknown), ")")
+                # Splitted in two to make as long request as possible (this is a first one)
                 dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
                 dis_or_not.update(dis_or_not_append)
+                long_redirects = long_redirects + long_redirects_append
+                # # Splitted in two to make as long request as possible (this is a second)
+                # dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
+                # dis_or_not.update(dis_or_not_append)
                 long_redirects = long_redirects + long_redirects_append
                 for ib in batch_unknown:
                     ib2 = ib.link[0].upper() + ib.link[1:]

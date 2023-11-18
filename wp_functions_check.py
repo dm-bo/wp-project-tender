@@ -159,6 +159,7 @@ def check_wp_no_links_in_links(viet_pages_content):
           not re.search(r"{{IMDb title\|", page['content']) and \
           not re.search(r"{{Шахматные ссылки[ \n]*\|", page['content']) and \
           not re.search(r"{{ЭЕЭ[ \n]*\|", page['content']) and \
+          not re.search(r"{{Ethnologue[ \n]*\|", page['content']) and \
           not re.search(r"{{MacTutor Biography[ \n]*\|", page['content']) and \
           not re.search(r"{{Сотрудник РАН[ \n]*\|", page['content']) and \
           not re.search(r"{{Math-Net.ru[ \n]*\|", page['content']) and \

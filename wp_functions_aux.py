@@ -246,7 +246,14 @@ def get_wp_categories(pagenames):
         cat_len_tot = 0
         #time.sleep(3)
         response = session.get(url=api_url, params=PARAMS_1)
-        pages_dict = response.json()['query']["pages"]
+        try:
+            pages_dict = response.json()['query']["pages"]
+        except:
+            print("OMG! OMG!")
+            print(pagenames_batch, "len:", len(pagenames_batch))
+            print(response)
+            print(type(response))
+            print(response.json())
         #first_set = list(pages_dict)[0]
         #print(pages_dict)
         for page in response.json()['query']["pages"]:
@@ -301,7 +308,10 @@ def get_disambigs(dis_pages):
     # }
     # response = session.get(url=URL, params=PARAMS_1)
     # for mb_page in response.json()['query']['pages']:
+    # print(get_wp_categories(dis_page_names))
     for mb_page in get_wp_categories(dis_page_names):
+        # if mb_page['title'] == "Ли Тхай То":
+            # print(mb_page)
         #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
             try:
@@ -310,7 +320,6 @@ def get_disambigs(dis_pages):
                 print(mb_page)
                 exit(5)
         else:
-            #if "missing" in mb_page.keys():
             if mb_page['missing']:
                 result[mb_page['title']] = False
             else:
@@ -323,17 +332,18 @@ def get_disambigs(dis_pages):
     # Resolve redirects
     redirect_targets = []
     redirect_pairs = []
-    for rd in redirects:
-        PARAMS_2 = {
-            'action': "query",
-            'formatversion':   2,
-            'redirects': True,
-            'titles': rd,
-            'format': "json"
-        }
-        response2 = session.get(url=URL, params=PARAMS_2)
+    PARAMS_2 = {
+        'action': "query",
+        'formatversion':   2,
+        'redirects': 1,
+        'titles': '|'.join(redirects),
+        'format': "json"
+    }
+    response2 = session.get(url=URL, params=PARAMS_2)
+    for redirect in response2.json()['query']['redirects']:
         try:
-            redirect_target = response2.json()['query']['redirects'][0]['to']
+            rd = redirect['from']
+            redirect_target = redirect['to']
         except KeyError:
             print("======== KeyError while resolving redirect ==========!!!")
             # print(response.json())
@@ -356,19 +366,22 @@ def get_disambigs(dis_pages):
             #print("^^^^^^ That was a bad redirect! ^^^^^^^")
             long_redirects.append(rd)
             #print("Now long redirs is", long_redirects)
-    PARAMS_3 = {
-        'action': "query",
-        'formatversion':   2,
-        'prop':   "categories",
-        'cllimit': 1000,
-        'titles': '|'.join(redirect_targets),
-        'format': "json"
-    }
-    response = session.get(url=URL, params=PARAMS_3)
-    #print(mb_page)
-    for mb_page in response.json()['query']['pages']:
-        if "categories" in mb_page.keys():
-            is_disambig = any(x['title'] == "Категория:Страницы значений по алфавиту" for x in mb_page['categories'])
+    # PARAMS_3 = {
+        # 'action': "query",
+        # 'formatversion':   2,
+        # 'prop':   "categories",
+        # 'cllimit': 1000,
+        # 'titles': '|'.join(redirect_targets),
+        # 'format': "json"
+    # }
+    # response = session.get(url=URL, params=PARAMS_3)
+    # #print(mb_page)
+    # for mb_page in response.json()['query']['pages']:
+    for mb_page in get_wp_categories(redirect_targets):
+        #if "categories" in mb_page.keys():
+        if len(mb_page["categories"]):
+            #is_disambig = any(x['title'] == "Категория:Страницы значений по алфавиту" for x in mb_page['categories'])
+            is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
         else:
             print("------------skipping faulty page", mb_page['title'])
             is_disambig = False
