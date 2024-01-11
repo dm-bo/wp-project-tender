@@ -2,14 +2,14 @@ import re
 
 from wp_functions_aux import get_wp_page_sections, get_date_format
 
-class ProblemPage(object):
+class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
         self.title = title
         self.note = note
         self.counter = counter
         self.samples = samples
     def __repr__(self):
-        return '[[{}]] ({} hits, {} samples)'.format(self.title, self.counter, len(self.samples))
+        return f"[[{self.title}]] ({self.counter} hits, {self.samples} samples)"
 
 def check_wp_pages_square_km(viet_pages_content):
     result = []
@@ -125,7 +125,6 @@ def check_wp_links_unavailable(viet_pages_content):
     result = []
     for page in viet_pages_content:
         mc = re.findall(r"{{[Нн]едоступная ссылка", page['content'])
-        # mc = re.findall(r"(http[s]?://[^ \|]*)(?:(?!http[s]?://).)*{{Недоступная ссылка", page['content'])
         if mc:
             rx = r"(http[s]?://[^ \|]*)(?:(?!http[s]?://).)*{{Недоступная ссылка"
             result.append(ProblemPage(title=page['title'],counter=len(mc),
@@ -253,7 +252,7 @@ def check_wp_semicolon_sections(viet_pages_content):
     return result
 
 # TODO also need check commas, colons etc.
-def check_wp_SNPREP(viet_pages_content):
+def check_wp_snprep(viet_pages_content):
     result = []
     for page in viet_pages_content:
         mc = re.findall(r".{6}\.[ ]*(?:<ref[ >]|{{sfn\|)", page['content'])
@@ -299,7 +298,7 @@ def check_wp_too_few_wikilinks(viet_pages_content):
         if len(page['content'].encode('utf-8')) > 20480:
             mc = re.findall(r"\[\[[^\]:]*\]\]", page['content'])
             linksPerKB = 1024 * len(mc) / len(page['content'].encode('utf-8'))
-            linksPerKB_str = "{:0.2f}".format(linksPerKB)
+            linksPerKB_str = "{linksPerKB:0.2f}"
             if linksPerKB > TOO_HIGH:
                 result.append(ProblemPage(title=page['title'], note=f"{linksPerKB_str}, " + \
                     f"({len(mc)}/{len(page['content'].encode('utf-8'))}) — а здесь наоборот, " + \

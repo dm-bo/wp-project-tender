@@ -127,7 +127,8 @@ for post_results_page in result_pages:
 
     time_threshold = datetime.datetime.now() - datetime.timedelta(days=time_cooldown)
     result_content = get_wp_pages_content([post_results_page])
-    mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}", result_content[0][0]['content'])
+    mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
+        result_content[0][0]['content'])
     template_options = ""
     if mc1:
         check_template = parse_check_template(mc1[0])
@@ -326,18 +327,18 @@ for post_results_page in result_pages:
     checks.append(Check(
         name="SNPREP",
         title="[[ВП:СН-ПРЕП|СН-ПРЕП]]",
-        descr="Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> или " + \
-            "<code><nowiki>.{{sfn</nowiki></code>, либо их вариации с пробелами, как <code>" + \
-            "<nowiki>. <ref</nowiki></code>. Сноска должна стоять перед точкой, кроме случаев, "+ \
+        descr="Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> или " +
+            "<code><nowiki>.{{sfn</nowiki></code>, либо их вариации с пробелами, как <code>" +
+            "<nowiki>. <ref</nowiki></code>. Сноска должна стоять перед точкой, кроме случаев, "+
             "когда точка является частью сокращения.",
-        pages=check_wp_SNPREP(viet_pages_content),
+        pages=check_wp_snprep(viet_pages_content),
         total=len(viet_pages))
     )
 
     checks.append(Check(
         name="SemicolonSections",
         title=";Недоразделы",
-        descr="Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, её " + \
+        descr="Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, её " +
             "следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.",
         pages=check_wp_semicolon_sections(viet_pages_content),
         total=len(viet_pages))
@@ -398,8 +399,9 @@ for post_results_page in result_pages:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо этого " + \
-                "шаблона, чтобы ссылки отображались в принятом для русских публикаций формате.",
+            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
+                "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
+                "формате.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
         )
@@ -409,8 +411,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Служебный шаблон для бота-архиватора. Ссылку и шаблон желательно переоформлять на " + \
-                "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " + \
+            descr="Служебный шаблон для бота-архиватора. Ссылку и шаблон желательно " +
+                "переоформлять на {{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
                 "''archiveurl'' и ''archivedate''.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
@@ -421,8 +423,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Ссылку и шаблон желательно переоформлять на " + \
-                "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " + \
+            descr="Ссылку и шаблон желательно переоформлять на " +
+                "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
                 "''archiveurl'' и ''archivedate''.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
@@ -433,8 +435,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Ссылку и шаблон желательно переоформлять на " + \
-                "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " + \
+            descr="Ссылку и шаблон желательно переоформлять на " +
+                "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
                 "''archiveurl'' и ''archivedate''.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
@@ -476,7 +478,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name="IconTemplates",
             title="Страницы с *icon-шаблонами",
-            descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki></code>.",
+            descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki>" +
+                "</code>.",
             pages=check_wp_icon_template(viet_pages_content),
             total=len(viet_pages))
         )
@@ -485,7 +488,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name="RefTemplates",
             title="Страницы с ref-шаблонами",
-            descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki></code>.",
+            descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki>" +
+                "</code>.",
             pages=check_wp_ref_templates(viet_pages_content),
             total=len(viet_pages))
         )
@@ -493,7 +497,7 @@ for post_results_page in result_pages:
     checks.append(Check(
         name="Isolated",
         title="Изолированные статьи",
-        descr="В другие статьи Википедии нужно добавить ссылки на такую статью, а потом удалить " + \
+        descr="В другие статьи Википедии нужно добавить ссылки на такую статью, а потом удалить " +
             "из неё шаблон об изолированности.",
         pages=check_wp_isolated(viet_pages_content),
         total=len(viet_pages))
@@ -530,7 +534,8 @@ for post_results_page in result_pages:
     checks.append(Check(
         name="LinksUnanvailable",
         title="Недоступные ссылки",
-        descr="Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или подобрать другой источник.",
+        descr="Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или " +
+            "подобрать другой источник.",
         pages=check_wp_links_unavailable(viet_pages_content),
         total=len(viet_pages))
     )
@@ -566,7 +571,8 @@ for post_results_page in result_pages:
         checks.append(Check(
             name="BadDelimiters",
             title="Неформатные разделители в числах",
-            descr="В тексте есть конструкции вида 1,234,567 или 12.345.678. Если это одно число, то в качестве разделителя групп цифр нужно использовать пробел (см. [[ВП:Ч]]).",
+            descr="В тексте есть конструкции вида 1,234,567 или 12.345.678. Если это одно число, " +
+                "то в качестве разделителя групп цифр нужно использовать пробел (см. [[ВП:Ч]]).",
             pages=check_wp_pages_delimiters(viet_pages_content),
             total=len(viet_pages))
         )
@@ -575,9 +581,9 @@ for post_results_page in result_pages:
         checks.append(Check(
             name="Communes",
             title="Коммуны",
-            descr="Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено. " + \
-                "В статьях о Вьетнаме ''коммуны'' (равно как ''приходы'' и, в большинстве случаев," + \
-                " ''деревни'') следует заменить на ''общины''.",
+            descr="Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено. " +
+                "В статьях о Вьетнаме ''коммуны'' (равно как ''приходы'' и, в большинстве " +
+                "случаев, ''деревни'') следует заменить на ''общины''.",
             pages=check_wp_communes(viet_pages_content),
             total=len(viet_pages))
         )
@@ -660,7 +666,9 @@ for post_results_page in result_pages:
             #if len(batch_unknown) > batch_size:
             if sum(len(s.link) for s in batch_unknown) > BATCH_LENGTH or \
               len(batch_unknown) >= BATCH_HARD_LIMIT:
-                print("Checker invoked", i, "/", len(internal_links), "( len", sum(len(s.link) for s in batch_unknown), ", items", len(batch_unknown), ")")
+                print("Checker invoked", i, "/", len(internal_links),
+                    "( len", sum(len(s.link) for s in batch_unknown),
+                    ", items", len(batch_unknown), ")")
                 dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
                 dis_or_not.update(dis_or_not_append)
                 long_redirects = long_redirects + long_redirects_append

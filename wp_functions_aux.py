@@ -1,4 +1,5 @@
 #import time
+import sys
 import re
 import datetime
 import requests
@@ -8,7 +9,7 @@ import dateutil.parser  # pip install python-dateutil
 # returns array of page names
 def get_wp_pages_by_template(template, namespace):
     api_url = "http://ru.wikipedia.org/w/api.php"
-    PARAMS_0 = {
+    INIT_PARAMS = {
         "action": "query",
         "titles": template,
         "prop": "transcludedin",
@@ -19,10 +20,10 @@ def get_wp_pages_by_template(template, namespace):
     session = requests.Session()
     result = []
     have_data_to_get = True
-    PARAMS_1 = PARAMS_0
+    RUN_PARAMS = INIT_PARAMS
     while have_data_to_get:
         #time.sleep(3)
-        response = session.get(url=api_url, params=PARAMS_1)
+        response = session.get(url=api_url, params=RUN_PARAMS)
         pages_dict = response.json()['query']["pages"]
         # print(pages_dict, pages_dict)
         #first_set = list(pages_dict)[0]
@@ -33,7 +34,7 @@ def get_wp_pages_by_template(template, namespace):
         if 'continue' in response.json().keys():
             print("Let's continue!")
             print(response.json()['continue'])
-            PARAMS_1 = dict(list(PARAMS_0.items()) + list(response.json()['continue'].items()))
+            RUN_PARAMS = dict(list(INIT_PARAMS.items()) + list(response.json()['continue'].items()))
             have_data_to_get = True
         else:
             have_data_to_get = False
@@ -98,7 +99,8 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
         cats_done[next_cat] = True
         # if len(pages) > 500:
             # break
-    print(f"Totals: {len(pages)} pages found, {len(cats_done)} categories processed, {len(cats)} categories left.")
+    print(f"Totals: {len(pages)} pages found, {len(cats_done)} categories processed, " +
+        f"{len(cats)} categories left.")
     return pages
 
 def get_wp_pages_content(viet_pages,limit=10000):
@@ -109,7 +111,7 @@ def get_wp_pages_content(viet_pages,limit=10000):
     viet_pages_old_patrolled = []
     next_batch = []
     api_url = "http://ru.wikipedia.org/w/api.php"
-    PARAMS_0 = {
+    REQ_PARAMS = {
         "action": "query",
         "format": "json",
         "prop": "flagged|revisions",
@@ -127,10 +129,9 @@ def get_wp_pages_content(viet_pages,limit=10000):
         if j > limit:
             break
         if len(next_batch) == batch_size or j == len(viet_pages):
-            PARAMS_batch = PARAMS_0
-            PARAMS_batch['titles'] = '|'.join(next_batch) #.replace("&","%26")
-            #PARAMS_batch['titles'] = 'Олонец'
-            response = session.get(url=api_url, params=PARAMS_0)
+            params_batch = REQ_PARAMS
+            params_batch['titles'] = '|'.join(next_batch) #.replace("&","%26")
+            response = session.get(url=api_url, params=REQ_PARAMS)
             for page in response.json()['query']['pages']:
                 # if re.search(r"Постановление", page['title']):
                     # print(page)
@@ -168,6 +169,9 @@ class OloloLink():
         return f'[[{self.link}]] ({self.page})'
 
 def get_wp_internal_links(viet_pages_content):
+    """
+    Build a big list of internal links from a big list of pages content.
+    """
     links_ololo = []
     links_ololo_arr = []
     i = 0
@@ -193,6 +197,9 @@ def get_wp_internal_links(viet_pages_content):
     #return links_Ololo_arr
 
 def get_wp_page_sections(content):
+    """
+    Get sections list (with content) from page wikitext.
+    """
     section_contents = re.split(r"=[=]+[ ]*[^=]*[ ]*=[=]+", content)
     section_names = re.findall(r"(=[=]+)[ ]*([^=]*)[ ]*=[=]+", content)
     sections = [{
@@ -209,12 +216,18 @@ def get_wp_page_sections(content):
     return sections
 
 def get_date_format(date_str):
+    """
+    Returns if given string is a valid WP date
+    """
     return re.search(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", date_str) or \
       re.search(r"^[0-9]{4}-[0-9]{2}$", date_str) or \
       re.search(r"^[0-9]{4}$", date_str) or \
       re.search(r"^$", date_str)
 
 def get_wp_authentication_status(session):
+    """
+    Check if given session is authenticated.
+    """
     URL = "https://ru.wikipedia.org/w/api.php"
     PARAMS_0 = {
         "action": "query",
@@ -230,6 +243,9 @@ def get_wp_authentication_status(session):
     return False
 
 def get_wp_authenticated_session(login, password):
+    """
+    Takes login/pass and retursns authenticated sessions
+    """
     session = requests.Session()
     URL = "https://ru.wikipedia.org/w/api.php"
     PARAMS_1 = {
@@ -241,7 +257,7 @@ def get_wp_authenticated_session(login, password):
     response = session.get(url=URL, params=PARAMS_1)
     # print(response.json()['query']['tokens'])
     login_token = response.json()['query']['tokens']['logintoken']
-    
+
     PARAMS_2 = {
         'action':     "login",
         'lgname':     login,
@@ -257,6 +273,9 @@ def get_wp_authenticated_session(login, password):
     return False
 
 def set_wp_page_text(session, title, text, summary):
+    """
+    Replace wikitext of page. Entirely.
+    """
     if not get_wp_authentication_status(session):
         print("Session is not authenticated! Aborting.")
         return False
@@ -288,6 +307,10 @@ def set_wp_page_text(session, title, text, summary):
     return False
 
 def get_wp_categories(pagenames):
+    """
+    Get categories for pages.
+    Can deal with API limit.
+    """
     api_url = "http://ru.wikipedia.org/w/api.php"
     pagenames_batch = '|'.join(pagenames)
     # TODO change 500 to MAXLIMIT
@@ -348,13 +371,12 @@ def get_wp_categories(pagenames):
             "missing": key_p in pages_missing
         }
         result.append(page_cats)
-    return(result)
+    return result
 
 def get_disambigs(dis_pages):
     result = {}
     redirects = []
     long_redirects = []
-    # $disPageBatch = ($batchUnknown.link | % {$_ -replace "#.*"}) -join "|" -replace "&","%26" -replace "\+","%2B"
     dis_page_names = []
     for dis_page in dis_pages:
         dis_page_names.append(dis_page.link)
@@ -378,10 +400,11 @@ def get_disambigs(dis_pages):
         #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
             try:
-                result[mb_page['title']] = "Категория:Страницы значений по алфавиту" in mb_page['categories']
+                result[mb_page['title']] = \
+                    "Категория:Страницы значений по алфавиту" in mb_page['categories']
             except:
                 print(mb_page)
-                exit(5)
+                sys.exit(5)
         else:
             if mb_page['missing']:
                 result[mb_page['title']] = False
@@ -395,14 +418,14 @@ def get_disambigs(dis_pages):
     # Resolve redirects
     redirect_targets = []
     redirect_pairs = []
-    PARAMS_2 = {
+    REQUEST_PARAMS = {
         'action': "query",
         'formatversion':   2,
         'redirects': 1,
         'titles': '|'.join(redirects),
         'format': "json"
     }
-    response2 = session.get(url=URL, params=PARAMS_2)
+    response2 = session.get(url=URL, params=REQUEST_PARAMS)
     for redirect in response2.json()['query']['redirects']:
         try:
             rd = redirect['from']
@@ -443,7 +466,6 @@ def get_disambigs(dis_pages):
     for mb_page in get_wp_categories(redirect_targets):
         #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
-            #is_disambig = any(x['title'] == "Категория:Страницы значений по алфавиту" for x in mb_page['categories'])
             is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
         else:
             print("------------skipping faulty page", mb_page['title'])
@@ -455,6 +477,9 @@ def get_disambigs(dis_pages):
     return result,long_redirects
 
 def parse_check_template(template_text):
+    """
+    Parse template text to dict
+    """
     template_dict = {}
     mc2 = re.findall(r"\|([\-_ a-zA-Z0-9\n]*)\=([^\|}]*)", template_text)
     for m in mc2:
