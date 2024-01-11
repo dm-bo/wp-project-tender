@@ -3,10 +3,12 @@ from dateutil.parser import parse
 
 from jinja2 import Environment, FileSystemLoader
 
-from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content, get_wp_page_sections
+from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
-from wp_functions_aux import get_disambigs
+from wp_functions_aux import get_disambigs, get_wp_pages_by_category_recurse
+from wp_functions_aux import parse_check_template
 from wp_functions_check import *
+# import update_list
 
 from wp_auth_data import *
 
@@ -47,37 +49,48 @@ UPDATES = [
     {'date': datetime.datetime(2023, 11, 14, 23, 40),
      'text': "Теперь можно добавлять произвольный текст в конец страницы (например, категории)"},
     {'date': datetime.datetime(2023, 11, 15, 18, 00),
-     'text': "Добавлен поиск ссылок на страницы неоднозначностей."}
+     'text': "Добавлен поиск ссылок на страницы неоднозначностей."},
+    {'date': datetime.datetime(2023, 11, 27, 14, 20),
+     'text': "Добавлен поиск неформатных чисел (1.234.567 и пр.)."}
 ]
+
+# TODO search fo \[\d+\]
 
 AREAS = [  ]
 # ready: 
-# "Holocaust", , "Israel", "Christianity" , "Bible", "India"
+# "Holocaust", , "Israel", "Christianity" , "Bible", "India", "Mythology"
 # already 
 # "Vietnam", "Karelia", "Cybersport", "Belarus", "Vologda", "SverdlovskObl", "Tatarstan"
-AREAS = [ "Mythology" ]
+# "Astronomy"
+AREAS = [ "Vietnam" ]
 
 ###############################
 ###### ITERATE FROM HERE ######
 ###############################
 
+# FIXME namespace
+result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
+print("Got pages by template =", result_pages)
+
 #area = AREAS[0]
-for area in AREAS:
+# for area in AREAS:
+for post_results_page in result_pages:
+    print("")
+    print("Working on", post_results_page)
     checks = []
     exclude_pages = []
-    # output_file = f"C:\Users\Dm\Desktop\wp\badlinks-{area}.py.txt"
-    output_file = f"C:/Users/Dm/Desktop/wp/badlinks-{area}.py.txt"
-    prologue = ""
+    # prologue = ""
     epilogue = ""
     post_results = False
-    post_results_page = ""
+    # post_results_page = ""
     pages_limit = 5000
     summary = "плановое обновление данных"
     checks_enabled = {
         "CiteDecorations": True,
         "Communes": False,
         "Experimental": False,
-        "Disambigs": False
+        "Disambigs": False,
+        "UglyRedirects": False
     }
     time_cooldown = 5
 
@@ -88,116 +101,107 @@ for area in AREAS:
     # maybe we'll need this info (not yet)
     cannot_check = []
 
-    # FIXME тупо перенесено почти 1:1
+    # TODO dismantle this
+    area = ""
+    if area == "Astronomy":
+        post_results = True
+        viet_pages = get_wp_pages_by_category_recurse(
+            [ "Категория:Статьи проекта Астрономия высшей важности",
+            "Категория:Статьи проекта Астрономия высокой важности" ], 1)
+        post_results_page = "Проект:Астрономия/Недостатки статей"
+        # checks_enabled["CiteDecorations"] = False
 
-    if area == "Vologda":
-        # post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вологда", 1)
-        post_results_page = "Проект:Вологда/Недостатки статей"
-        checks_enabled["Disambigs"] = True
-    elif area == "Vietnam":
-        post_results = True
-        time_cooldown = 0
-        #pages_limit = 20
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Вьетнам", 1)
-        checks_enabled["Communes"] = True
-        checks_enabled["Experimental"] = True
-        checks_enabled["Disambigs"] = True
-        post_results_page = "Участник:Klientos/Ссылки проекта Вьетнам"
-    elif area == "Holocaust":
-        post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Холокост", 1)
-        checks_enabled["CiteDecorations"] = False
-        prologue = "Исправленные проблемы просьба убирать из списка!"
-        post_results_page = "Проект:Холокост/Недостатки статей"
-    elif area == "Belarus":
-        exclude_pages = [ "Белоруссия/Шапка" ]
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Белоруссия", 1)
-        checks_enabled["CiteDecorations"] = False
-        post_results_page = "Проект:Белоруссия/Недостатки статей"
-    elif area == "Israel":
-        post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Израиль", 1)
-        checks_enabled["CiteDecorations"] = False
-        post_results_page = "Проект:Израиль/Недостатки статей"
-    elif area == "SverdlovskObl":
-        # TODO категория проекта
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Свердловская область", 1)
-        post_results_page = "Проект:Свердловская область/Недостатки статей"
-        epilogue = "[[Категория:Проект:Свердловская область]]"
-    elif area == "Tatarstan":
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Татарстан", 1)
-        post_results_page = "Проект:Татарстан/Недостатки статей"
-    elif area == "Karelia":
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Карелия", 1)
-        post_results_page = "Проект:Карелия/Недостатки статей"
-    elif area == "Cybersport":
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Киберспорт", 1)
-        post_results_page = "Проект:Киберспорт/Недостатки статей"
-    elif area == "Bible":
-        post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Библия", 1)
-        post_results_page = "Проект:Библия/Недостатки статей"
-        checks_enabled["Disambigs"] = True
-    elif area == "Christianity":
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Христианство", 1)
-        post_results_page = "Проект:Христианство/Недостатки статей"
-    elif area == "India":
-        post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Индия", 1)
-        post_results_page = "Проект:Индия/Недостатки статей"
-    elif area == "Mythology":
-        post_results = True
-        viet_pages = get_wp_pages_by_template("Шаблон:Статья проекта Мифология", 1)
-        post_results_page = "Проект:Мифология/Недостатки статей"
-
-        # } elseif ($area -like "Astronomy") {
-            # $vietPagesSO = Get-PagesByCategory -Category "Статьи проекта Астрономия высшей важности" | ? { $_ -like "Обсуждение:*"}
-            # $vietPagesSO += Get-PagesByCategory -Category "Статьи проекта Астрономия высокой важности" | ? { $_ -like "Обсуждение:*"}
-            # $vietPagesSO | % { $vietPages += $_ -replace "Обсуждение:" }
-        # } elseif ($area -like "Bollywood") {
-            # #$vietPages = Get-PagesByCategory -Category "Кинематограф Индии"
-            # $cats = @("Кинематограф Индии")
-            # #throw "not implemented yet"
-            # $vietPages = $pags
-            # $vietPages = @()
-        # } else {
-            # "INFO: Please set variable `$area first!"
-            # throw "no valid area selected"
-        # }
+    post_results = True
+    # Some custom hacks
+    if post_results_page == "Проект:Вьетнам/Недостатки статей":
+        #post_results = False
+        #time_cooldown = 0
+        pass
+    if post_results_page == "Проект:Астрономия/Недостатки статей":
+        post_results = False
+        #time_cooldown = 0
+        pass
 
     # Checking that result page is not too fresh
     # Searching for actual updates
-    
-    print("")
-    print("==========")
-    print("Working on", area)
-
-    print("Total pages found:", len(viet_pages))
-    viet_pages = list(set(viet_pages) - set(exclude_pages))
-    print("After omitting some pages:", len(viet_pages))
 
     time_threshold = datetime.datetime.now() - datetime.timedelta(days=time_cooldown)
     result_content = get_wp_pages_content([post_results_page])
-    mc = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|timestamp=([^}\|]*)", result_content[0][0]['content'])
-    #print
-    if mc:
-        print(mc[0])
-        dt_obj = parse(mc[0])
-        print("From current page:", dt_obj)
-        if dt_obj > time_threshold:
+    mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}", result_content[0][0]['content'])
+    template_options = ""
+    if mc1:
+        check_template = parse_check_template(mc1[0])
+        print(check_template)
+        if 'timestamp' in check_template.keys():
+            previous_timestamp = parse(check_template['timestamp'])
+        else:
+            previous_timestamp = datetime.datetime.now() - datetime.timedelta(days=time_cooldown+1)
+        if previous_timestamp > time_threshold:
+            # print("time_cooldown", time_cooldown)
+            # print("time_threshold", time_threshold)
+            # print("previous_timestamp", previous_timestamp)
             print("Not old enough, skipping")
             continue
         actual_updates = []
         for UPDATE in UPDATES:
-            if UPDATE['date'] > dt_obj:
+            if UPDATE['date'] > previous_timestamp:
                 actual_updates.append(UPDATE['text'])
         if actual_updates:
-                summary = summary + ", обновление скрипта"
+            summary = summary + ", обновление скрипта"
         has_bot_template = True
+        # making options for a new template
+        check_template_new = check_template
+        check_template_new['timestamp'] = datetime.datetime.now()
+        for key, value in check_template_new.items():
+            template_options = template_options + f"|{key}={value} "
     else:
         has_bot_template = False
         actual_updates = []
+
+    ### Working on template options
+    # enable_checks
+    if 'enable_checks' in check_template.keys():
+        enabled_checks = check_template['enable_checks'].replace(' ','').split(',')
+        for ec in enabled_checks:
+            checks_enabled[ec] = True
+    # disable_checks
+    if 'disable_checks' in check_template.keys():
+        disable_checks = check_template['disable_checks'].replace(' ','').split(',')
+        for dc in disable_checks:
+            checks_enabled[dc] = False
+    # search criteria
+    if re.search(r"^Шаблон:", check_template['criteria']):
+        print("Search by template", check_template['criteria'])
+        viet_pages = get_wp_pages_by_template(check_template['criteria'], 1)
+    elif re.search(r"^Категория:", check_template['criteria']):
+        # TODO separate elif for project categories
+        print("Search by category", check_template['criteria'])
+        viet_pages = get_wp_pages_by_category_recurse([ check_template['criteria'] ], 0)
+    else:
+        print("Unknown search criteria!")
+        continue
+    # Loading exceptions list
+    if 'except_pages' in check_template.keys():
+        excludes_content = get_wp_pages_content([check_template['except_pages']])
+        exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
+    else:
+        exclude_pages = []
+    print("exclude_pages", exclude_pages)
+    # set empty prologue and epilogue if not defined
+    if 'prologue' not in check_template.keys():
+        check_template['prologue'] = ""
+    if 'epilogue' not in check_template.keys():
+        check_template['epilogue'] = ""
+
+    area = re.findall(r"\:([^\/\:]*)\/", post_results_page)[0]
+    area = re.findall(r"\:(.*)", post_results_page)[0].replace("/","_")
+    output_file = f"C:/Users/Dm/Desktop/wp/badlinks-{area}.py.txt"
+
+    print("Updating page ", post_results_page)
+
+    print("Total pages found:", len(viet_pages))
+    viet_pages = list(set(viet_pages) - set(exclude_pages))
+    print("After omitting some pages:", len(viet_pages))
 
     #viet_pages = get_pages_by_template("Шаблон:Статья проекта Карелия",1)
     checks.append(Check(
@@ -240,8 +244,8 @@ for area in AREAS:
     checks.append(Check(
         name="NoLinksInLinks",
         title="Статьи без ссылок в разделе «Ссылки»",
-        descr="Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит переместить " + \
-            "в раздел «Литература».",
+        descr="Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит " + \
+            "переместить в раздел «Литература».",
         pages=check_wp_no_links_in_links(viet_pages_content),
         total=len(viet_pages))
     )
@@ -249,8 +253,8 @@ for area in AREAS:
     checks.append(Check(
         name="NoRefs",
         title="Нет примечаний в разделе «Примечания»",
-        descr="Не считает примечания, подтянутые из ВД. В любом случае, было бы неплохо добавить " + \
-            "сноски в тело статьи.",
+        descr="Не считает примечания, подтянутые из ВД. В любом случае, было бы неплохо " + \
+            "добавить сноски в тело статьи.",
         pages=check_wp_no_refs(viet_pages_content),
         total=len(viet_pages))
     )
@@ -259,8 +263,8 @@ for area in AREAS:
     checks.append(Check(
         name="DirectInterwikis",
         title="Статьи с прямыми интервики-ссылками",
-        descr="Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если она " + \
-            "уже есть.",
+        descr="Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если " + \
+            "она уже есть.",
         pages=check_wp_pages_direct_interwikis(viet_pages_content),
         total=len(viet_pages))
     )
@@ -294,8 +298,9 @@ for area in AREAS:
     checks.append(Check(
         name="NoCats",
         title="Не указаны категории",
-        descr="Иногда категории назначаются шаблонами, тогда указывать категории напрямую не нужно. " +
-            "В таком случае категоризирующий шаблон следует учитывать при составлении этого списка.",
+        descr="Иногда категории назначаются шаблонами, тогда указывать категории напрямую не " +
+            "нужно. В таком случае категоризирующий шаблон следует учитывать при составлении " +
+            "этого списка.",
         pages=check_wp_no_cats(viet_pages_content),
         total=len(viet_pages))
     )
@@ -312,7 +317,8 @@ for area in AREAS:
         checks.append(Check(
             name="DirectWebarchive",
             title="Прямые ссылки на web.archive.org",
-            descr="Желательно заменить их на [[Ш:cite web]] с параметрами archiveurl и archivedate.",
+            descr="Желательно заменить их на [[Ш:cite web]] с параметрами archiveurl и " +
+                "archivedate.",
             pages=check_wp_pages_direct_webarchive(viet_pages_content),
             total=len(viet_pages))
         )
@@ -368,8 +374,9 @@ for area in AREAS:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо этого " + \
-                "шаблона, чтобы ссылки отображались в принятом для русских публикаций формате.",
+            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
+                "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
+                "формате.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
         )
@@ -379,8 +386,9 @@ for area in AREAS:
         checks.append(Check(
             name=f"TemplateRegexp {template}",
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо этого " + \
-                "шаблона, чтобы ссылки отображались в принятом для русских публикаций формате.",
+            descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
+                "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
+                "формате.",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
         )
@@ -505,7 +513,8 @@ for area in AREAS:
     checks.append(Check(
         name="NoSources",
         title="Статьи без источников",
-        descr="Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других признаков наличия источников.",
+        descr="Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других " +
+            "признаков наличия источников.",
         pages=no_sources_pages,
         total=len(viet_pages))
     )
@@ -552,6 +561,15 @@ for area in AREAS:
         pages=check_wp_template_regexp(viet_pages_content, template),
         total=len(viet_pages))
     )
+    
+    if checks_enabled["Experimental"]:
+        checks.append(Check(
+            name="BadDelimiters",
+            title="Неформатные разделители в числах",
+            descr="В тексте есть конструкции вида 1,234,567 или 12.345.678. Если это одно число, то в качестве разделителя групп цифр нужно использовать пробел (см. [[ВП:Ч]]).",
+            pages=check_wp_pages_delimiters(viet_pages_content),
+            total=len(viet_pages))
+        )
 
     if checks_enabled["Communes"]:
         checks.append(Check(
@@ -563,6 +581,8 @@ for area in AREAS:
             pages=check_wp_communes(viet_pages_content),
             total=len(viet_pages))
         )
+
+
 
     ### Overwikified dates ###
     # TODO rewrite this
@@ -624,31 +644,26 @@ for area in AREAS:
         i = 0
         batch_size = 20
         # set by Wikipedia
-        batch_hard_limit = 50
-        batch_length = 1300
+        BATCH_HARD_LIMIT = 50
+        BATCH_LENGTH = 1300
         batch_unknown = []
         for il in internal_links:
             i = i + 1
             il.link = il.link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
             il.link = re.sub("#.*$","", il.link)
             if il.link == "":
-                # in case of [[#smth]]
                 pass
             elif not il.link in dis_or_not:
                 batch_unknown.append(il)
             elif dis_or_not[il.link]:
                 disambigs.append(il)
             #if len(batch_unknown) > batch_size:
-            if sum(len(s.link) for s in batch_unknown) > batch_length or \
-              len(batch_unknown) >= batch_hard_limit:
+            if sum(len(s.link) for s in batch_unknown) > BATCH_LENGTH or \
+              len(batch_unknown) >= BATCH_HARD_LIMIT:
                 print("Checker invoked", i, "/", len(internal_links), "( len", sum(len(s.link) for s in batch_unknown), ", items", len(batch_unknown), ")")
-                # Splitted in two to make as long request as possible (this is a first one)
                 dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
                 dis_or_not.update(dis_or_not_append)
                 long_redirects = long_redirects + long_redirects_append
-                # # Splitted in two to make as long request as possible (this is a second)
-                # dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
-                # dis_or_not.update(dis_or_not_append)
                 long_redirects = long_redirects + long_redirects_append
                 for ib in batch_unknown:
                     ib2 = ib.link[0].upper() + ib.link[1:]
@@ -677,10 +692,12 @@ for area in AREAS:
         checks.append(Check(
             name="BadLinks",
             title="Ссылки на неоднозначности",
-            descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
+            descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки " +
+                "необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
             pages=disambig_problems,
             total=len(viet_pages))
         )
+    if checks_enabled["UglyRedirects"]:
         # side-product
         long_redirects_set = set(long_redirects)
         long_redirects = list(long_redirects_set)
@@ -688,8 +705,8 @@ for area in AREAS:
         # checks.append(Check(
             # name="UncheckableLinks",
             # title="Непроверяемые внутренние ссылки",
-            # descr="Внутренние ссылки, для которых не получилось определить, редирерект это или нет. " + \
-              # "Возможно, с ними что-то не так; надо проверить.",
+            # descr="Внутренние ссылки, для которых не получилось определить, редирерект это " + \
+              # "или нет. Возможно, с ними что-то не так; надо проверить.",
             # pages=cannot_check,
             # total=len(internal_links))
         # )
@@ -734,13 +751,13 @@ for area in AREAS:
     template = environment.get_template("index.wp")
 
     content = template.render(
-        prologue = prologue,
-        epilogue = epilogue,
+        prologue = check_template['prologue'],
+        epilogue = check_template['epilogue'],
         viet_pages_not_patrolled = viet_pages_not_patrolled,
         viet_pages_old_patrolled = viet_pages_old_patrolled,
         checks = checks,
         updates = actual_updates,
-        timestamp = datetime.datetime.now()
+        template_options = template_options
     )
 
     ### Publishing ###
@@ -766,3 +783,5 @@ for area in AREAS:
     ### Stats ###
     print("Checked", len(dis_or_not), "of", len(internal_links))
     print(datetime.datetime.now()-moment_start)
+
+# TODO old pages - to refresh

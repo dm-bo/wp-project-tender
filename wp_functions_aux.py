@@ -24,6 +24,7 @@ def get_wp_pages_by_template(template, namespace):
         #time.sleep(3)
         response = session.get(url=api_url, params=PARAMS_1)
         pages_dict = response.json()['query']["pages"]
+        # print(pages_dict, pages_dict)
         #first_set = list(pages_dict)[0]
         transcluded_objs = pages_dict[list(pages_dict)[0]]['transcludedin']
         # res = [ sub['gfg'] for sub in test_list ]
@@ -37,6 +38,68 @@ def get_wp_pages_by_template(template, namespace):
         else:
             have_data_to_get = False
     return sorted(result)
+
+def get_wp_pages_by_category(category, namespace=1):
+    api_url = "http://ru.wikipedia.org/w/api.php"
+    PARAMS_0 = {
+        "action": "query",
+        "cmtitle": category,
+        "list": "categorymembers",
+        "format": "json",
+        "cmlimit": 500
+    }
+    session = requests.Session()
+    result = []
+    have_data_to_get = True
+    PARAMS_1 = PARAMS_0
+    while have_data_to_get:
+        response = session.get(url=api_url, params=PARAMS_1)
+        # print(response.json())
+        for page in response.json()['query']['categorymembers']:
+            if page['ns'] == namespace or \
+              page['ns'] == 14:
+                #print(page)
+                result.append(page['title'].replace('Обсуждение:',''))
+        if 'continue' in response.json().keys():
+            print("Let's continue!")
+            print(response.json()['continue'])
+            PARAMS_1 = dict(list(PARAMS_0.items()) + list(response.json()['continue'].items()))
+            have_data_to_get = True
+        else:
+            have_data_to_get = False
+    return sorted(result)
+
+def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
+    pages = []
+    cats_done = {}
+    pages_done = {}
+    while cats:
+        member_cats = []
+        member_pages = []
+        #next_cat = cats[0]
+        next_cat = cats.pop(0)
+        members = get_wp_pages_by_category(next_cat, cat_namespace)
+        members_1 = []
+        for member in members:
+            if not re.search(r"^Категория:Портал:", member) and \
+              not re.search(r"^Файл:", member):
+                if re.search(r"^Категория:", member):
+                    member_cats.append(member)
+                else:
+                    member_pages.append(member)
+        for member in member_cats:
+            if not member in cats_done:
+                cats.append(member)
+                cats_done[member] = True
+        for member in member_pages:
+            if not member in pages_done:
+                pages.append(member)
+                pages_done[member] = True
+        cats_done[next_cat] = True
+        # if len(pages) > 500:
+            # break
+    print(f"Totals: {len(pages)} pages found, {len(cats_done)} categories processed, {len(cats)} categories left.")
+    return pages
 
 def get_wp_pages_content(viet_pages,limit=10000):
     batch_size = 10
@@ -391,4 +454,9 @@ def get_disambigs(dis_pages):
                 result[pair['from']] = is_disambig
     return result,long_redirects
 
-        
+def parse_check_template(template_text):
+    template_dict = {}
+    mc2 = re.findall(r"\|([\-_ a-zA-Z0-9\n]*)\=([^\|}]*)", template_text)
+    for m in mc2:
+        template_dict[ m[0].strip() ] = m[1].strip()
+    return template_dict

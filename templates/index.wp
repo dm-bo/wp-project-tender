@@ -49,8 +49,7 @@
 
 {% if epilogue %}{{ epilogue }}
 {% endif %}
-
 <!-- Чтобы отключить обновление этой страницы, удалите всё ниже: -->
-<!-- {{ '{{' }}User:KlientosBot/project-tender |timestamp={{ timestamp }} {{ '}}' }} -->
+{{ '{{' }}User:KlientosBot/project-tender {{ template_options }}{{ '}}' }}
 
 {% block content %}{% endblock %}

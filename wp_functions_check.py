@@ -56,6 +56,20 @@ def check_wp_communes(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(samples)))
     return result
 
+def check_wp_pages_delimiters(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        samples = []
+        # [ \n]
+        mc = re.findall(r".{4}[^№][\| \n][0-9]{1,3}\.[0-9]{3}\.[0-9]{3}[^0-9]", page['content'])
+        if mc:
+            for m in mc:
+                if not re.findall(r"номер", m):
+                    samples.append(re.findall(r"[0-9]{1,3}\.[0-9]{3}\.[0-9]{3}", m))
+        if samples:
+            result.append(ProblemPage(title=page['title'],counter=len(samples),samples=samples))
+    return result
+
 def check_wp_pages_direct_googlebooks(viet_pages_content):
     result = []
     for page in viet_pages_content:
@@ -142,6 +156,7 @@ def check_wp_no_cats(viet_pages_content):
           not re.search(r"{{Мосты Вологды}}", page['content']) and \
           not re.search(r"{{Улица Екатеринбурга[ \n]*\|", page['content']) and \
           not re.search(r"{{Карта[ \n]*\|", page['content']) and \
+          not re.search(r"{{Остров[ \n]*\|", page['content']) and \
           not re.search(r"{{Культурное наследие народов РФ\|", page['content']) and \
           not re.search(r"{{Вьетнам на Олимпийских игра}}", page['content']):
             result.append(ProblemPage(title=page['title']))
