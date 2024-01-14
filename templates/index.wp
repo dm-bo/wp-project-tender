@@ -19,7 +19,8 @@
 === {{ check.title }} ===
 {{ check.descr }}
 {% for page in check.pages %}
-* [[{{ page.title }}]]{% if page.counter %} ({{ page.counter }}){% endif %}{% if page.note %} {{ page.note }}{% endif %}
+* [[{{ page.title }}]]{% if page.counter %} ({{ page.counter }}){% endif %}
+{% if page.note %}{% if check.nowiki %} <nowiki>{{ page.note }}</nowiki>{% else %} {{ page.note }}{% endif %}{% endif %}
 
 {% if page.samples|length > 0 %}{% for sample in page.samples %}
 {% if check.nowiki %}

@@ -27,11 +27,6 @@ class Check():
     def __repr__(self):
         return f'{self.name} ({self.counter} pages found)'
 
-# class AreaConfig():
-    # def __init__(self, name="", title="", descr=""):
-        # self.name = name
-        # self.title = title
-
 moment_start = datetime.datetime.now()
 dis_or_not = {}
 session = get_wp_authenticated_session(wp_login, wp_passw)
@@ -54,26 +49,14 @@ UPDATES = [
      'text': "Добавлен поиск неформатных чисел (1.234.567 и пр.)."}
 ]
 
-# TODO search fo \[\d+\]
-
-AREAS = [  ]
-# ready: 
-# "Holocaust", , "Israel", "Christianity" , "Bible", "India", "Mythology"
-# already 
-# "Vietnam", "Karelia", "Cybersport", "Belarus", "Vologda", "SverdlovskObl", "Tatarstan"
-# "Astronomy"
-AREAS = [ "Vietnam" ]
-
 ###############################
 ###### ITERATE FROM HERE ######
 ###############################
 
-# FIXME namespace
+# NS 104 - project discussions
 result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
 print("Got pages by template =", result_pages)
 
-#area = AREAS[0]
-# for area in AREAS:
 for post_results_page in result_pages:
     print("")
     print("Working on", post_results_page)
@@ -93,6 +76,7 @@ for post_results_page in result_pages:
         "UglyRedirects": False
     }
     time_cooldown = 5
+    OVERDATED_THRESHOLD = 10
 
     # result disambigs
     disambigs = []
@@ -101,25 +85,23 @@ for post_results_page in result_pages:
     # maybe we'll need this info (not yet)
     cannot_check = []
 
-    # TODO dismantle this
-    area = ""
-    if area == "Astronomy":
-        post_results = True
-        viet_pages = get_wp_pages_by_category_recurse(
-            [ "Категория:Статьи проекта Астрономия высшей важности",
-            "Категория:Статьи проекта Астрономия высокой важности" ], 1)
-        post_results_page = "Проект:Астрономия/Недостатки статей"
-        # checks_enabled["CiteDecorations"] = False
-
     post_results = True
     # Some custom hacks
     if post_results_page == "Проект:Вьетнам/Недостатки статей":
-        #post_results = False
-        #time_cooldown = 0
+        # post_results = False
+        # time_cooldown = 0
+        OVERDATED_THRESHOLD = 10
         pass
     if post_results_page == "Проект:Астрономия/Недостатки статей":
-        post_results = False
-        #time_cooldown = 0
+        # post_results = False
+        # time_cooldown = 0
+        pass
+    if post_results_page == "Проект:Холокост/Недостатки статей":
+        # post_results = False
+        # time_cooldown = 0
+        # as requested
+        # TODO move to the template as an option
+        OVERDATED_THRESHOLD = 30
         pass
 
     # Checking that result page is not too fresh
@@ -171,16 +153,22 @@ for post_results_page in result_pages:
         for dc in disable_checks:
             checks_enabled[dc] = False
     # search criteria
-    if re.search(r"^Шаблон:", check_template['criteria']):
-        print("Search by template", check_template['criteria'])
-        viet_pages = get_wp_pages_by_template(check_template['criteria'], 1)
-    elif re.search(r"^Категория:", check_template['criteria']):
-        # TODO separate elif for project categories
-        print("Search by category", check_template['criteria'])
-        viet_pages = get_wp_pages_by_category_recurse([ check_template['criteria'] ], 0)
-    else:
-        print("Unknown search criteria!")
-        continue
+    viet_pages = []
+    for crit in check_template['criteria'].replace(', ',',').split(','):
+        criteria = crit.strip()
+        print("Working on criteria", criteria)
+        if re.search(r"^Шаблон:", criteria):
+            print("Search by template", criteria)
+            viet_pages = viet_pages + get_wp_pages_by_template(criteria, 1)
+        elif re.search(r"^Категория:Статьи проекта", criteria):
+            print("Search by project category", criteria)
+            viet_pages = viet_pages + get_wp_pages_by_category_recurse([ criteria ], 1)
+        elif re.search(r"^Категория:", criteria):
+            print("Search by category", criteria)
+            viet_pages = viet_pages + get_wp_pages_by_category_recurse([ criteria ], 0)
+        else:
+            print("Unknown search criteria!")
+            continue
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
         excludes_content = get_wp_pages_content([check_template['except_pages']])
@@ -203,6 +191,11 @@ for post_results_page in result_pages:
     print("Total pages found:", len(viet_pages))
     viet_pages = list(set(viet_pages) - set(exclude_pages))
     print("After omitting some pages:", len(viet_pages))
+    
+    # Some custom hacks
+    # if post_results_page == "Проект:Вьетнам/Недостатки статей":
+        # checks_enabled["Disambigs"] = False
+        # checks_enabled["UglyRedirects"] = False
 
     #viet_pages = get_pages_by_template("Шаблон:Статья проекта Карелия",1)
     checks.append(Check(
@@ -357,7 +350,8 @@ for post_results_page in result_pages:
         title="Неформатные даты в cite web",
         descr="Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).",
         pages=check_wp_poor_dates(viet_pages_content),
-        total=len(viet_pages))
+        total=len(viet_pages),
+        nowiki=True)
     )
 
     checks.append(Check(
@@ -619,10 +613,11 @@ for post_results_page in result_pages:
     sorted_counted_dates = []
     for page in grouped_dates:
         # print(page[0].page, len(page))
-        sorted_counted_dates.append({
-            "page": page[0].page,
-            "count": len(page)
-        })
+        if len(page) > OVERDATED_THRESHOLD:
+            sorted_counted_dates.append({
+                "page": page[0].page,
+                "count": len(page)
+            })
     #scs_dates = sorted(sorted_counted_dates, key=lambda x: x['count'], reverse=True)
     #print(scs_dates)
 

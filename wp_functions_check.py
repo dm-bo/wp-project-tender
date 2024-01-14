@@ -298,14 +298,14 @@ def check_wp_too_few_wikilinks(viet_pages_content):
         if len(page['content'].encode('utf-8')) > 20480:
             mc = re.findall(r"\[\[[^\]:]*\]\]", page['content'])
             linksPerKB = 1024 * len(mc) / len(page['content'].encode('utf-8'))
-            linksPerKB_str = "{linksPerKB:0.2f}"
+            # linksPerKB_str = "{linksPerKB:0.2f}"
             if linksPerKB > TOO_HIGH:
-                result.append(ProblemPage(title=page['title'], note=f"{linksPerKB_str}, " + \
+                result.append(ProblemPage(title=page['title'], note=f"{linksPerKB:0.2f}, " + \
                     f"({len(mc)}/{len(page['content'].encode('utf-8'))}) — а здесь наоборот, " + \
                     "слишком много"))
             if linksPerKB < TOO_LOW:
                 result.append(ProblemPage(title=page['title'],
-                    note=f"({linksPerKB_str}, {len(mc)}/{len(page['content'].encode('utf-8'))})"))
+                    note=f"({linksPerKB:0.2f}, {len(mc)}/{len(page['content'].encode('utf-8'))})"))
     return result
 
 ###
