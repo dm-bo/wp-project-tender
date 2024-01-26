@@ -65,7 +65,8 @@ def check_wp_pages_delimiters(viet_pages_content):
         if mc:
             for m in mc:
                 if not re.findall(r"номер", m):
-                    samples.append(re.findall(r"[0-9]{1,3}\.[0-9]{3}\.[0-9]{3}", m))
+                    m1 = re.findall(r"[0-9]{1,3}\.[0-9]{3}\.[0-9]{3}", m)
+                    samples.append(m1[0])
         if samples:
             result.append(ProblemPage(title=page['title'],counter=len(samples),samples=samples))
     return result
@@ -127,8 +128,21 @@ def check_wp_links_unavailable(viet_pages_content):
         mc = re.findall(r"{{[Нн]едоступная ссылка", page['content'])
         if mc:
             rx = r"(http[s]?://[^ \|]*)(?:(?!http[s]?://).)*{{Недоступная ссылка"
+            # TODO rework hack
+            nc = []
+            for m in re.findall(rx, page['content']):
+                if re.search(r"http://[\.a-z]*lib.ru/", m):
+                    nc.append(m.replace('http://',''))
+                    # nc.append("(ссылка скрыта)")
+                elif re.search(r"https://[\.a-z]*lib.ru/", m):
+                    nc.append(m.replace('https://',''))
+                    # nc.append("(ссылка скрыта)")
+                else:
+                    nc.append(m)
+            # was
+            #  samples=re.findall(rx, page['content'])))
             result.append(ProblemPage(title=page['title'],counter=len(mc),
-              samples=re.findall(rx, page['content'])))
+              samples=nc))
     return result
 
 def check_wp_naked_links(viet_pages_content):
@@ -137,7 +151,18 @@ def check_wp_naked_links(viet_pages_content):
         mc = re.findall(r"\[http[^ ]*\]", page['content'])
         mc += re.findall(r"[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+", page['content'])
         if mc:
-            result.append(ProblemPage(title=page['title'],samples=mc))
+            # TODO rework hack
+            nc = []
+            for m in mc:
+                if re.search(r"http://[\.a-z]*lib.ru/", m):
+                    nc.append(m.replace('http://',''))
+                    # nc.append("(ссылка скрыта)")
+                elif re.search(r"https://[\.a-z]*lib.ru/", m):
+                    nc.append(m.replace('https://',''))
+                    # nc.append("(ссылка скрыта)")
+                else:
+                    nc.append(m)
+            result.append(ProblemPage(title=page['title'],samples=nc))
     return result
 
 def check_wp_no_cats(viet_pages_content):
