@@ -96,9 +96,13 @@ for post_results_page in result_pages:
         # post_results = False
         # time_cooldown = 0
         pass
+    if post_results_page == "Проект:Санкт-Петербург/Недостатки статей":
+        # post_results = False
+        time_cooldown = 0
+        pass
     if post_results_page == "Проект:Холокост/Недостатки статей":
         # post_results = False
-        # time_cooldown = 0
+        # time_cooldown = 25
         # as requested
         # TODO move to the template as an option
         OVERDATED_THRESHOLD = 30
@@ -765,6 +769,13 @@ for post_results_page in result_pages:
 
     ### Publishing ###
 
+    # Local file
+    # This goes before the web. If web posting fails, we'll be able to debug using this
+
+    with open(output_file, mode="w", encoding="utf-8") as message:
+        message.write(content)
+        print(f"... wrote {output_file}")
+
     # Web
 
     if not post_results:
@@ -776,11 +787,6 @@ for post_results_page in result_pages:
     else:
         print("Cannot update page.")
 
-    # Local file
-
-    with open(output_file, mode="w", encoding="utf-8") as message:
-        message.write(content)
-        print(f"... wrote {output_file}")
     
     
     ### Stats ###
