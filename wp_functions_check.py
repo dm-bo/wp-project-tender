@@ -1,6 +1,7 @@
 import re
 
 from wp_functions_aux import get_wp_page_sections, get_date_format
+from wp_functions_aux import get_wp_pages_content
 
 class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
@@ -167,46 +168,38 @@ def check_wp_naked_links(viet_pages_content):
 
 def check_wp_no_cats(viet_pages_content):
     result = []
+    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'])
+    exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
-        if not re.search(r"\[\[Категория\:", page['content']) and \
-          not re.search(r"{{кинорежиссёр\|", page['content']) and \
-          not re.search(r"{{сценарист\|", page['content']) and \
-          not re.search(r"{{[Пп]евица\|", page['content']) and \
-          not re.search(r"{{[Аа]ктриса\|", page['content']) and \
-          not re.search(r"{{историк\|", page['content']) and \
-          not re.search(r"{{археолог\|", page['content']) and \
-          not re.search(r"{{композитор\|", page['content'], re.IGNORECASE) and \
-          not re.search(r"{{список однофамильцев}}", page['content']) and \
-          not re.search(r"{{Мосты Вологды}}", page['content']) and \
-          not re.search(r"{{Улица Екатеринбурга[ \n]*\|", page['content']) and \
-          not re.search(r"{{Карта[ \n]*\|", page['content']) and \
-          not re.search(r"{{Остров[ \n]*\|", page['content']) and \
-          not re.search(r"{{Культурное наследие народов РФ\|", page['content']) and \
-          not re.search(r"{{Вьетнам на Олимпийских игра}}", page['content']):
+        has_cats = False
+        for t in exclude_templates:
+            t_pattern = re.compile(r"{{{{[ \n]*{0}[ \n]*[\|}}]*".format(t), re.IGNORECASE)
+            # print('checking template', t_pattern)
+            if re.search(t_pattern, page['content']):
+                has_cats = True
+                # print(page['title'], "okay by template", t)
+        if not re.search(r"\[\[Категория\:", page['content']) and not has_cats:
             result.append(ProblemPage(title=page['title']))
     return result
 
 def check_wp_no_links_in_links(viet_pages_content):
     result = []
+    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'])
+    exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
-        if re.search(r"==[ ]*Ссылки[ ]*==", page['content']) and \
-          not re.search(r"http[s]{0,1}://", page['content']) and \
-          not re.search(r"{{ВС}}", page['content'], re.IGNORECASE) and \
-          not re.search(r"{{WAD\|", page['content']) and \
-          not re.search(r"{{ВТ-ЭСБЕ\|", page['content']) and \
-          not re.search(r"{{IMDb name\|", page['content'], re.IGNORECASE) and \
-          not re.search(r"{{IMDb title\|", page['content']) and \
-          not re.search(r"{{Шахматные ссылки[ \n]*\|", page['content']) and \
-          not re.search(r"{{ЭЕЭ[ \n]*\|", page['content']) and \
-          not re.search(r"{{Ethnologue[ \n]*\|", page['content']) and \
-          not re.search(r"{{MacTutor Biography[ \n]*\|", page['content']) and \
-          not re.search(r"{{Сотрудник РАН[ \n]*\|", page['content']) and \
-          not re.search(r"{{Math-Net.ru[ \n]*\|", page['content']) and \
-          not re.search(r"{{oopt.aari.ru[ \n]*\|", page['content']) and \
-          not re.search(r"{{Warheroes[ \n]*\|", page['content'], re.IGNORECASE) and \
-          not re.search(r"{{SportsReference[ \n]*\|", page['content']) and \
-          not re.search(r"{{DNB-Portal[ \n]*\|", page['content']) and \
-          not re.search(r"{{DDB[ \n]*\|", page['content']):
+        # nothing to do if there is no "Ссылки" section
+        if not re.search(r"==[ ]*Ссылки[ ]*==", page['content']):
+            continue
+        # page has links
+        if re.search(r"http[s]{0,1}://", page['content']):
+            continue
+        has_links = False
+        for t in exclude_templates:
+            t_pattern = re.compile(r"{{{{[ \n]*{0}[ \n]*[\|}}]*".format(t), re.IGNORECASE)
+            if re.search(t_pattern, page['content']):
+                has_links = True
+                # print(page['title'], "okay by template", t)
+        if not has_links:
             result.append(ProblemPage(title=page['title']))
     return result
 
@@ -215,7 +208,8 @@ def check_wp_no_refs(viet_pages_content):
     for page in viet_pages_content:
         if re.search(r"==[ ]*Примечания[ ]*==", page['content']) and \
           not re.search(r"<ref", page['content']) and \
-          not re.search(r"{{sfn", page['content']):
+          not re.search(r"{{sfn", page['content']) and \
+          not re.search(r"{{[ \n]*Население[ \n]*\|", page['content'], re.IGNORECASE):
             result.append(ProblemPage(title=page['title']))
             # print(page['title'], "— bad notes, len", len(page['content']))
             # print(bool(re.search(r"==[ ]*Примечания[ ]*==", page['content'])))
@@ -285,7 +279,7 @@ def check_wp_snprep(viet_pages_content):
         for m in mc:
             if re.search(r"[  ]г.(<|{)", m) or \
               re.search(r"[  ](гг|лл|др|руб|экз|чел|л\. с|н\. э|т\.[  ]д|т\.[  ]п)\.(<|{)", m) or \
-              re.search(r"[  ](тыс|млн|долл)\.(<|{)", m) or \
+              re.search(r"[  ](тыс|млн|долл|проч)\.(<|{)", m) or \
               re.search(r"[  ]([а-яА-Я]{1}\.[  ]{0,1}[а-яА-Я]{1})\.(<|{)", m) or \
               re.search(r"[  ](ж\.д|Inc|M\.E\.P)\.(<|{)", m):
                 pass
