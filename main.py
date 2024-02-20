@@ -70,12 +70,14 @@ for post_results_page in result_pages:
     summary = "плановое обновление данных"
     checks_enabled = {
         "CiteDecorations": True,
+        "PoorDates": True,
         "Communes": False,
         "Experimental": False,
         "Disambigs": False,
         "UglyRedirects": False
     }
-    time_cooldown = 5
+    # FIXME
+    time_cooldown = 15
     OVERDATED_THRESHOLD = 10
 
     # result disambigs
@@ -88,8 +90,9 @@ for post_results_page in result_pages:
     post_results = True
     # Some custom hacks
     if post_results_page == "Проект:Вьетнам/Недостатки статей":
-        # post_results = False
-        # time_cooldown = 0
+        post_results = False
+        time_cooldown = 0
+        #
         OVERDATED_THRESHOLD = 10
         pass
     if post_results_page == "Проект:Астрономия/Недостатки статей":
@@ -98,7 +101,7 @@ for post_results_page in result_pages:
         pass
     if post_results_page == "Проект:Санкт-Петербург/Недостатки статей":
         # post_results = False
-        time_cooldown = 0
+        # time_cooldown = 0
         pass
     if post_results_page == "Проект:Холокост/Недостатки статей":
         # post_results = False
@@ -349,14 +352,15 @@ for post_results_page in result_pages:
         total=len(viet_pages))
     )
 
-    checks.append(Check(
-        name="PoorDates",
-        title="Неформатные даты в cite web",
-        descr="Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).",
-        pages=check_wp_poor_dates(viet_pages_content),
-        total=len(viet_pages),
-        nowiki=True)
-    )
+    if checks_enabled["PoorDates"]:
+        checks.append(Check(
+            name="PoorDates",
+            title="Неформатные даты в cite web",
+            descr="Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).",
+            pages=check_wp_poor_dates(viet_pages_content),
+            total=len(viet_pages),
+            nowiki=True)
+        )
 
     checks.append(Check(
         name="BadSquareKm",
