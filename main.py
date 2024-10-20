@@ -1,3 +1,8 @@
+"""
+Script/bot to search for issues in the Wikipedia project
+For details, please see https://ru.wikipedia.org/wiki/Участник:KlientosBot
+"""
+
 import datetime
 from dateutil.parser import parse
 
@@ -17,6 +22,11 @@ from wp_auth_data import *
 # TODO MAYBE check Template:уточнить (problem)
 
 class Check():
+    """
+    The check result that contains check names and description, affected pages,
+    options for listing on the resulting page and counting in stats
+    """
+    # pylint: disable=too-many-instance-attributes
     def __init__(self, name="", title="", descr="", pages=[], total=0, nowiki=False,
       supress_listing=False, supress_stat=False):
         self.name = name
@@ -103,6 +113,7 @@ for post_results_page in result_pages:
     post_results = True
     # Some custom hacks
     if post_results_page == "Проект:Вьетнам/Недостатки статей":
+        # pylint: disable=unnecessary-pass
         # post_results = False
         # time_cooldown = 0
         #
@@ -126,7 +137,6 @@ for post_results_page in result_pages:
         # as requested
         # TODO move to the template as an option
         OVERDATED_THRESHOLD = 30
-        pass
 
     # Checking that result page is not too fresh
     # Searching for actual updates
@@ -215,7 +225,7 @@ for post_results_page in result_pages:
     print("Total pages found:", len(viet_pages))
     viet_pages = list(set(viet_pages) - set(exclude_pages))
     print("After omitting some pages:", len(viet_pages))
-    
+
     # Some custom hacks
     # if post_results_page == "Проект:Вьетнам/Недостатки статей":
         # checks_enabled["Disambigs"] = False
@@ -229,14 +239,12 @@ for post_results_page in result_pages:
         total=len(viet_pages),
         supress_listing=True)
     )
-    
-    
 
     ### Patrolling ####
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
         get_wp_pages_content(viet_pages=viet_pages,limit=pages_limit)
-        
+
     # checks.append(Check(
         # name="Total2",
         # title="Всего 2",
@@ -244,7 +252,7 @@ for post_results_page in result_pages:
         # total=len(viet_pages),
         # supress_listing=True)
     # )
-        
+
     #print("Total pages retrieved:", len(viet_pages_content), "of", len(viet_pages))
     #print("Not patrolled:", len(viet_pages_old_patrolled), "and", len(viet_pages_not_patrolled))
     print("Engaging check NotPatrolled and beyond")
@@ -319,7 +327,7 @@ for post_results_page in result_pages:
         pages=check_wp_wp_links(viet_pages_content),
         total=len(viet_pages))
     )
-        
+
     checks.append(Check(
         name="WMLinks",
         title="Ссылки на проекты Викимедиа как внешние",
@@ -903,10 +911,6 @@ for post_results_page in result_pages:
     else:
         print("Cannot update page.")
 
-    
-    
     ### Stats ###
     print("Checked", len(dis_or_not), "of", len(internal_links))
     print(datetime.datetime.now()-moment_start)
-
-# TODO old pages - to refresh
