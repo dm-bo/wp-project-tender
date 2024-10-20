@@ -12,6 +12,17 @@ from wp_functions_check import *
 
 from wp_auth_data import *
 
+
+# FIXME даты с T сейчас не принимаются
+# TODO (IN PROGRESS) [0-9][  ](век|веком|веку|века|веке|веков|векам|веками|веках}}[^а-я]      # fix being tested
+# TODO check Template:Чистить| (problem)
+# TODO check if no {{references}} but has <ref> or {{sfn}}
+# TODO <!-- Bot generated title -->                                     # being tested
+# TODO СН-ПРЕП для запятой (e. g. Говап)                                # being tested
+# TODO м<sup>2</sup> (e. g. Кондао (тюрьма))                            # being tested
+# TODO прямые внешние ссылки
+# TODO MAYBE check Template:уточнить (problem)
+
 class Check():
     def __init__(self, name="", title="", descr="", pages=[], total=0, nowiki=False,
       supress_listing=False, supress_stat=False):
@@ -76,8 +87,9 @@ for post_results_page in result_pages:
         "Disambigs": False,
         "UglyRedirects": False
     }
-    # FIXME
-    time_cooldown = 15
+    # default:
+    # time_cooldown = 5
+    time_cooldown = 5
     OVERDATED_THRESHOLD = 10
 
     # result disambigs
@@ -87,19 +99,31 @@ for post_results_page in result_pages:
     # maybe we'll need this info (not yet)
     cannot_check = []
 
+    # Test mode
+    # ## if post_results_page != "Проект:Татарстан/Недостатки статей":
+    # if post_results_page != "Проект:Вьетнам/Недостатки статей":
+        # print(f"TEST MODE: Skipping {post_results_page}")
+        # continue
+    # else:
+        # print(f"TEST MODE: Working on {post_results_page}")
+
     post_results = True
     # Some custom hacks
     if post_results_page == "Проект:Вьетнам/Недостатки статей":
-        post_results = False
-        time_cooldown = 0
+        # post_results = False
+        # time_cooldown = 0
         #
-        OVERDATED_THRESHOLD = 10
+        OVERDATED_THRESHOLD = 14
         pass
-    if post_results_page == "Проект:Астрономия/Недостатки статей":
+    if post_results_page == "Проект:Православие/Недостатки статей/Православное богословие":
         # post_results = False
         # time_cooldown = 0
         pass
     if post_results_page == "Проект:Санкт-Петербург/Недостатки статей":
+        # post_results = False
+        # time_cooldown = 0
+        pass
+    if post_results_page == "Проект:Татарстан/Недостатки статей":
         # post_results = False
         # time_cooldown = 0
         pass
@@ -212,13 +236,25 @@ for post_results_page in result_pages:
         total=len(viet_pages),
         supress_listing=True)
     )
+    
+    
 
     ### Patrolling ####
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
         get_wp_pages_content(viet_pages=viet_pages,limit=pages_limit)
+        
+    # checks.append(Check(
+        # name="Total2",
+        # title="Всего 2",
+        # pages=["None", "None"],
+        # total=len(viet_pages),
+        # supress_listing=True)
+    # )
+        
     #print("Total pages retrieved:", len(viet_pages_content), "of", len(viet_pages))
     #print("Not patrolled:", len(viet_pages_old_patrolled), "and", len(viet_pages_not_patrolled))
+    print("Engaging check NotPatrolled and beyond")
     checks.append(Check(
         name="NotPatrolled",
         title="Не отпатрулированные статьи",
@@ -242,6 +278,18 @@ for post_results_page in result_pages:
         nowiki=True)
     )
 
+    # print("Engaging check LinksInText")
+    # checks.append(Check(
+        # name="LinksInText",
+        # title="Ссылки в тексте",
+        # descr="Не следует вставлять внешние ссылки прямо в текст. Обычно они размещаются в " + \
+            # "сносках, разделе \"Ссылки\" и других подобающих местах.",
+        # pages=check_wp_links_in_text(viet_pages_content),
+        # total=len(viet_pages),
+        # nowiki=True)
+    # )
+
+    print("Engaging check NoLinksInLinks and beyond")
     checks.append(Check(
         name="NoLinksInLinks",
         title="Статьи без ссылок в разделе «Ссылки»",
@@ -251,6 +299,7 @@ for post_results_page in result_pages:
         total=len(viet_pages))
     )
 
+    # print("Engaging check NoRefs")
     checks.append(Check(
         name="NoRefs",
         title="Нет примечаний в разделе «Примечания»",
@@ -277,12 +326,22 @@ for post_results_page in result_pages:
         pages=check_wp_wp_links(viet_pages_content),
         total=len(viet_pages))
     )
+        
+    checks.append(Check(
+        name="WMLinks",
+        title="Ссылки на проекты Викимедиа как внешние",
+        descr="Вместо прямых ссылок на сестринские проекты используйте внутренние ссылки " +
+            "вида <code><nowiki>[[q:en:Star Wars]]</nowiki></code> (см. " +
+            "[[Википедия:Интервики#Коды проектов Фонда]]).",
+        pages=check_wp_wkimedia_links(viet_pages_content),
+        total=len(viet_pages))
+    )
 
     checks.append(Check(
         name="BotTitles",
         title="Заголовок добавлен ботом",
         descr="Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki>" + \
-            "<!-- Заголовок добавлен ботом --></nowiki>''.",
+            "<!-- Заголовок добавлен ботом --> или <!-- Bot generated title --></nowiki>''.",
         pages=check_wp_pages_bot_titles(viet_pages_content),
         total=len(viet_pages))
     )
@@ -329,7 +388,8 @@ for post_results_page in result_pages:
         title="[[ВП:СН-ПРЕП|СН-ПРЕП]]",
         descr="Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> или " +
             "<code><nowiki>.{{sfn</nowiki></code>, либо их вариации с пробелами, как <code>" +
-            "<nowiki>. <ref</nowiki></code>. Сноска должна стоять перед точкой, кроме случаев, "+
+            "<nowiki>. <ref</nowiki></code>, а также те же сочетания с запятой." +
+            "Сноска должна стоять перед точкой или запятой, кроме случаев, "+
             "когда точка является частью сокращения.",
         pages=check_wp_snprep(viet_pages_content),
         total=len(viet_pages))
@@ -370,6 +430,22 @@ for post_results_page in result_pages:
         total=len(viet_pages))
     )
 
+    checks.append(Check(
+        name="BadSquareKmSup",
+        title="Страницы с <nowiki>км<sup>2</sup></nowiki>",
+        descr="Желательно поменять на км².",
+        pages=check_wp_pages_square_km_sup(viet_pages_content),
+        total=len(viet_pages))
+    )
+
+    checks.append(Check(
+        name="BadSquareMSup",
+        title="Страницы с <nowiki>м<sup>2</sup></nowiki>",
+        descr="Желательно поменять на м².",
+        pages=check_wp_pages_square_m_sup(viet_pages_content),
+        total=len(viet_pages))
+    )
+
     # Template checks (can be looped later)
 
     if checks_enabled["CiteDecorations"]:
@@ -379,7 +455,8 @@ for post_results_page in result_pages:
             title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
             descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
                 "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
-                "формате.",
+                "формате. N. B.: не забудьте добавить фамилию автора в ref, если " +
+                "источник используется в сносках {{tl|sfn}}!",
             pages=check_wp_template_regexp(viet_pages_content, template),
             total=len(viet_pages))
         )
@@ -568,6 +645,50 @@ for post_results_page in result_pages:
         pages=check_wp_template_regexp(viet_pages_content, template),
         total=len(viet_pages))
     )
+
+    template = "V"
+    checks.append(Check(
+        name=f"TemplateRegexp {template}",
+        title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
+        descr="",
+        pages=check_wp_template_regexp(viet_pages_content, template),
+        total=len(viet_pages))
+    )
+
+    template = "закончить перевод"
+    checks.append(Check(
+        name=f"TemplateRegexp {template}",
+        title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
+        descr="",
+        pages=check_wp_template_regexp(viet_pages_content, template),
+        total=len(viet_pages))
+    )
+
+    template = "плохой перевод"
+    checks.append(Check(
+        name=f"TemplateRegexp {template}",
+        title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
+        descr="",
+        pages=check_wp_template_regexp(viet_pages_content, template),
+        total=len(viet_pages))
+    )
+
+    template = "Нерабочие сноски"
+    checks.append(Check(
+        name=f"TemplateRegexp {template}",
+        title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
+        descr="",
+        pages=check_wp_template_regexp(viet_pages_content, template),
+        total=len(viet_pages))
+    )
+
+    checks.append(Check(
+        name="ArabicNumerals",
+        title="Века арабскими цифрами",
+        descr="Номера веков должны быть записаны рисмкими цифрами, см. [[ВП:ДАТЫ]].",
+        pages=check_wp_centuries(viet_pages_content),
+        total=len(viet_pages))
+    )
     
     if checks_enabled["Experimental"]:
         checks.append(Check(
@@ -589,8 +710,6 @@ for post_results_page in result_pages:
             pages=check_wp_communes(viet_pages_content),
             total=len(viet_pages))
         )
-
-
 
     ### Overwikified dates ###
     # TODO rewrite this

@@ -1,7 +1,7 @@
 import re
 
 from wp_functions_aux import get_wp_page_sections, get_date_format
-from wp_functions_aux import get_wp_pages_content
+from wp_functions_aux import get_wp_pages_content, get_norefs_nolinks_content, get_justtext_content
 
 class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
@@ -22,10 +22,37 @@ def check_wp_pages_square_km(viet_pages_content):
             result.append(next_problem)
     return result
 
+def check_wp_pages_square_km_sup(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"км\<sup\>2\<\/sup\>", page['content'])
+        if mc:
+            next_problem = ProblemPage(title=page['title'])
+            result.append(next_problem)
+    return result
+
+def check_wp_pages_square_m_sup(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"[  ]м\<sup\>2\<\/sup\>", page['content'])
+        if mc:
+            next_problem = ProblemPage(title=page['title'])
+            result.append(next_problem)
+    return result
+
+def check_wp_pages_square_km_sup(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"км\<sup\>2\<\/sup\>", page['content'])
+        if mc:
+            next_problem = ProblemPage(title=page['title'])
+            result.append(next_problem)
+    return result
 def check_wp_pages_bot_titles(viet_pages_content):
     result = []
     for page in viet_pages_content:
         mc = re.findall(r"<!-- Заголовок добавлен ботом -->", page['content'])
+        mc += re.findall(r"<!-- Bot generated title -->", page['content'])
         if mc:
             next_problem = ProblemPage(title=page['title'],counter=len(mc))
             result.append(next_problem)
@@ -38,6 +65,17 @@ def check_wp_pages_bot_archives(viet_pages_content):
         if mc:
             #next_problem = ProblemPage(title=page['title'],counter=len(mc))
             #result.append(next_problem)
+            result.append(ProblemPage(title=page['title'],counter=len(mc)))
+    return result
+
+def check_wp_centuries(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        # allowed in notes and source titles
+        norefs_content = get_norefs_nolinks_content(page['content'])
+        # "веков" ?..
+        mc = re.findall(r"[0-9][  ](век|веком|веку|века|веке|веков|векам|веками|веках)[^а-я]", norefs_content)
+        if mc:
             result.append(ProblemPage(title=page['title'],counter=len(mc)))
     return result
 
@@ -138,6 +176,8 @@ def check_wp_links_unavailable(viet_pages_content):
                 elif re.search(r"https://[\.a-z]*lib.ru/", m):
                     nc.append(m.replace('https://',''))
                     # nc.append("(ссылка скрыта)")
+                elif re.search(r"http[s]*://[\.a-z]*stihi.ru/", m):
+                    nc.append(m.replace('http[s]*://',''))
                 else:
                     nc.append(m)
             # was
@@ -148,9 +188,10 @@ def check_wp_links_unavailable(viet_pages_content):
 
 def check_wp_naked_links(viet_pages_content):
     result = []
+    print("we are inside naked links")
     for page in viet_pages_content:
         mc = re.findall(r"\[http[^ ]*\]", page['content'])
-        mc += re.findall(r"[^=][^/\?\=\[\|]{1}http[s]{0,1}://[^\) \|\<\n]+", page['content'])
+        mc += re.findall(r"[^=][^/\?\=\[\|\:]{1}http[s]{0,1}://[^\) \|\<\n]+", page['content'])
         if mc:
             # TODO rework hack
             nc = []
@@ -160,16 +201,32 @@ def check_wp_naked_links(viet_pages_content):
                     # nc.append("(ссылка скрыта)")
                 elif re.search(r"https://[\.a-z]*lib.ru/", m):
                     nc.append(m.replace('https://',''))
+                elif re.search(r"://nobility.pro", m):
+                    nc.append(m.replace('http[s]*://',''))
                     # nc.append("(ссылка скрыта)")
                 else:
                     nc.append(m)
             result.append(ProblemPage(title=page['title'],samples=nc))
     return result
 
+def check_wp_links_in_text(viet_pages_content):
+    result = []
+    print("we are inside check_wp_links_in_text")
+    i = 0
+    for page in viet_pages_content:
+        i = i + 1
+        print(str(i) + " / " + str(len(viet_pages_content)) + " " + page['title'])
+        just_text = get_justtext_content(page['content'])
+        mc = re.findall(r"http[s]*\:\/\/[^ ]*", just_text)
+        if mc:
+            result.append(ProblemPage(title=page['title'],samples=mc))
+    return result
+
 def check_wp_no_cats(viet_pages_content):
     result = []
     exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'])
-    exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
+    # searches for [[:Шаблон: or [[Шаблон: on the page
+    exclude_templates = re.findall(r"\[\[[\:]*Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
         has_cats = False
         for t in exclude_templates:
@@ -184,7 +241,7 @@ def check_wp_no_cats(viet_pages_content):
 
 def check_wp_no_links_in_links(viet_pages_content):
     result = []
-    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'])
+    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'])
     exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
         # nothing to do if there is no "Ссылки" section
@@ -207,8 +264,9 @@ def check_wp_no_refs(viet_pages_content):
     result = []
     for page in viet_pages_content:
         if re.search(r"==[ ]*Примечания[ ]*==", page['content']) and \
-          not re.search(r"<ref", page['content']) and \
-          not re.search(r"{{sfn", page['content']) and \
+          not re.search(r"<ref", page['content'], re.IGNORECASE) and \
+          not re.search(r"{{source-ref", page['content'], re.IGNORECASE) and \
+          not re.search(r"{{sfn", page['content'], re.IGNORECASE) and \
           not re.search(r"{{[ \n]*Население[ \n]*\|", page['content'], re.IGNORECASE):
             result.append(ProblemPage(title=page['title']))
             # print(page['title'], "— bad notes, len", len(page['content']))
@@ -270,15 +328,16 @@ def check_wp_semicolon_sections(viet_pages_content):
             result.append(ProblemPage(title=page['title']))
     return result
 
-# TODO also need check commas, colons etc.
+# TODO also need check colons etc.
 def check_wp_snprep(viet_pages_content):
     result = []
     for page in viet_pages_content:
-        mc = re.findall(r".{6}\.[ ]*(?:<ref[ >]|{{sfn\|)", page['content'])
+        mc = re.findall(r".{6}[\.\,][ ]*(?:<ref[ >]|{{sfn\|)", page['content'])
         samples = []
         for m in mc:
             if re.search(r"[  ]г.(<|{)", m) or \
-              re.search(r"[  ](гг|лл|др|руб|экз|чел|л\. с|н\. э|т\.[  ]д|т\.[  ]п)\.(<|{)", m) or \
+              re.search(r"[  ]с.(<|{)", m) or \
+              re.search(r"[  ](гг|лл|др|пр|вв|руб|экз|чел|л\. с|н\. э|т\.[  ]д|т\.[  ]п)\.(<|{)", m) or \
               re.search(r"[  ](тыс|млн|долл|проч)\.(<|{)", m) or \
               re.search(r"[  ]([а-яА-Я]{1}\.[  ]{0,1}[а-яА-Я]{1})\.(<|{)", m) or \
               re.search(r"[  ](ж\.д|Inc|M\.E\.P)\.(<|{)", m):
@@ -289,7 +348,6 @@ def check_wp_snprep(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(samples)))
     return result
 
-# TODO simplify
 def check_wp_source_request(viet_pages_content, excludings):
     result = []
     for page in viet_pages_content:
@@ -337,5 +395,26 @@ def check_wp_wp_links(viet_pages_content):
             result.append(ProblemPage(title=page['title'],counter=len(mc)))
     return result
 
+def check_wp_wkimedia_links(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        mc = re.findall(r"\[http[s]*://[a-z]+.wiktionary.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikiquote.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikibooks.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikisource.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikinews.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikiversity.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z\.]*commons.wikimedia.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikivoyage.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.wikidata.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z\.]*species.wikimedia.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z\.]*meta.wikimedia.org", page['content'])
+        mc += re.findall(r"\[http[s]*://[a-z]+.mediawiki.org", page['content'])
+        if mc:
+            result.append(ProblemPage(title=page['title'],samples=mc))
+        # per Lvova (12)
+        # wiktionary, wikiquote, wikibooks, wikisource, wikinews, wikiversity, commons.wikimedia.org,
+        #         wikivoyage, wikidata, species.wikimedia.org, meta.wikimedia.org, mediawiki.org
+    return result
 
 ### Single-Page Checks ###

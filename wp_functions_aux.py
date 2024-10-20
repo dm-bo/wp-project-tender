@@ -103,7 +103,7 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
         f"{len(cats)} categories left.")
     return pages
 
-def get_wp_pages_content(viet_pages,limit=10000):
+def get_wp_pages_content(viet_pages,limit=100000):
     batch_size = 10
     viet_pages_content = []
 
@@ -219,7 +219,8 @@ def get_date_format(date_str):
     """
     Returns if given string is a valid WP date
     """
-    return re.search(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", date_str) or \
+    return re.search(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}\:[0-9]{2}$", date_str) or \
+      re.search(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", date_str) or \
       re.search(r"^[0-9]{4}-[0-9]{2}$", date_str) or \
       re.search(r"^[0-9]{4}$", date_str) or \
       re.search(r"^$", date_str)
@@ -485,3 +486,51 @@ def parse_check_template(template_text):
     for m in mc2:
         template_dict[ m[0].strip() ] = m[1].strip()
     return template_dict
+
+def get_norefs_nolinks_content(viet_page_content):
+    result = []
+    # has_semi = False
+    sections = get_wp_page_sections(viet_page_content)
+    for section in sections:
+        if not re.search(r"Литература|Примечания|Источники|Ссылки", section['name']):
+            
+            result.append("### " + section['name'] + " ###")
+            result.append(section['content'])
+    full_content = "\n\n".join(result)
+    # рабочий вариант
+    # почти: нужно (?m) или как-то так
+    refs = re.findall(r"<ref[^\>\/]*\>.*?\<\/ref\>", full_content)
+    for ref in refs:
+        full_content = full_content.replace(ref, "")
+    return full_content
+
+def get_justtext_content(viet_page_content, debug=False):
+    result = []
+    sections = get_wp_page_sections(viet_page_content)
+    for section in sections:
+        if not re.search(r"Литература|Примечания|Источники|Ссылки|См. также", section['name']):
+            result.append("### " + section['name'] + " ###")
+            result.append(section['content'])
+    full_content = "\n\n".join(result)
+    # рабочий вариант, with multiline
+    templ_ref = re.compile(r"<ref[^\>\/]*\>[\S\s]*?\<\/ref\>", re.MULTILINE)
+    refs = re.findall(templ_ref, full_content)
+    for ref in refs:
+        full_content = full_content.replace(ref, "")
+    # now remove templates, including nested
+    templ_regex = re.compile(r"{{[^\{\}]*?}}", re.MULTILINE)
+    #j = 0
+    while re.findall("{{", full_content) and re.findall("}}", full_content):
+        templs = re.findall(templ_regex, full_content)
+        #j = j + 1
+        #print(str(j) + " templates: " + str(len(templs)))
+        if len(templs) == 0:
+            #print()
+            print("WARNING: cannot process text")
+            #exit(1)
+            return ""
+        for templ in templs:
+            full_content = full_content.replace(templ, "")
+    if debug:
+        return full_content, templs
+    return full_content
