@@ -12,15 +12,8 @@ from wp_functions_check import *
 
 from wp_auth_data import *
 
-
-# FIXME даты с T сейчас не принимаются
-# TODO (IN PROGRESS) [0-9][  ](век|веком|веку|века|веке|веков|векам|веками|веках}}[^а-я]      # fix being tested
 # TODO check Template:Чистить| (problem)
 # TODO check if no {{references}} but has <ref> or {{sfn}}
-# TODO <!-- Bot generated title -->                                     # being tested
-# TODO СН-ПРЕП для запятой (e. g. Говап)                                # being tested
-# TODO м<sup>2</sup> (e. g. Кондао (тюрьма))                            # being tested
-# TODO прямые внешние ссылки
 # TODO MAYBE check Template:уточнить (problem)
 
 class Check():
