@@ -130,7 +130,8 @@ def get_wp_pages_content(viet_pages,limit=100000):
             break
         if len(next_batch) == batch_size or j == len(viet_pages):
             params_batch = REQ_PARAMS
-            params_batch['titles'] = '|'.join(next_batch) #.replace("&","%26")
+            params_batch['titles'] = '|'.join(next_batch) #.replace("&","%26").replace("/","%2F")
+            # print(params_batch['titles'])
             response = session.get(url=api_url, params=REQ_PARAMS)
             for page in response.json()['query']['pages']:
                 # if re.search(r"Постановление", page['title']):
@@ -147,7 +148,7 @@ def get_wp_pages_content(viet_pages,limit=100000):
                     #print("Old flagged", page['title'], '(since', str(date_patrolled), ')')
                 else:
                     pass
-
+                # print(page)
                 next_page =  {
                     "title": page['title'],
                     "content": page['revisions'][0]['slots']['main']['content']
@@ -427,6 +428,9 @@ def get_disambigs(dis_pages):
         'format': "json"
     }
     response2 = session.get(url=URL, params=REQUEST_PARAMS)
+    if not "redirects" in response2.json()['query']:
+        print("Cannot find redirects!")
+        print(response2.json()['query'])
     for redirect in response2.json()['query']['redirects']:
         try:
             rd = redirect['from']

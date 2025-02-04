@@ -8,6 +8,9 @@ from dateutil.parser import parse
 
 from jinja2 import Environment, FileSystemLoader
 
+# for projects shuffling
+import random
+
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_disambigs, get_wp_pages_by_category_recurse
@@ -70,6 +73,9 @@ UPDATES = [
 # NS 104 - project discussions
 result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
 print("Got pages by template =", result_pages)
+
+random.shuffle(result_pages)
+# print(result_pages)
 
 for post_results_page in result_pages:
     print("")
@@ -205,8 +211,9 @@ for post_results_page in result_pages:
             continue
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
-        excludes_content = get_wp_pages_content([check_template['except_pages']])
-        exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
+        if not check_template['except_pages'] == '':
+            excludes_content = get_wp_pages_content([check_template['except_pages']])
+            exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
     else:
         exclude_pages = []
     print("exclude_pages", exclude_pages)
