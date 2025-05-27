@@ -1,17 +1,13 @@
-#import time
-import sys
 import re
 import datetime
 import requests
-import dateutil.parser  # pip install python-dateutil
 import time # for sleep
+import ast # for str to dict 
+import dateutil.parser  # pip install python-dateutil
 
-# Redis fun
-import redis
-#for str to dict 
-import ast
+from config import get_tender_config
 
-REDIS_HOST = "172.28.249.117"
+script_config = get_tender_config()
 
 def get_wp_page_content(url,params):
     limit = 3
@@ -320,7 +316,6 @@ def get_wp_authentication_status(session):
     """
     Check if given session is authenticated.
     """
-    URL = "https://ru.wikipedia.org/w/api.php"
     PARAMS_0 = {
         "action": "query",
         "meta": "userinfo",
@@ -328,7 +323,7 @@ def get_wp_authentication_status(session):
     }
     if not hasattr(session, 'get'):
         return False
-    response = session.get(url=URL, params=PARAMS_0)
+    response = session.get(url=script_config["api_url"], params=PARAMS_0)
     #print(response.json()['query']['userinfo'])
     if response.json()['query']['userinfo']['id']:
         return True
@@ -339,14 +334,13 @@ def get_wp_authenticated_session(login, password):
     Takes login/pass and retursns authenticated sessions
     """
     session = requests.Session()
-    URL = "https://ru.wikipedia.org/w/api.php"
     PARAMS_1 = {
         'action': "query",
         'meta':   "tokens",
         'type':   "login",
         'format': "json"
     }
-    response = session.get(url=URL, params=PARAMS_1)
+    response = session.get(url=script_config["api_url"], params=PARAMS_1)
     # print(response.json()['query']['tokens'])
     login_token = response.json()['query']['tokens']['logintoken']
 
@@ -358,7 +352,7 @@ def get_wp_authenticated_session(login, password):
         'format':     "json"
     }
 
-    response = session.post(url=URL, data=PARAMS_2)
+    response = session.post(url=script_config["api_url"], data=PARAMS_2)
     # print(response.json())
     if get_wp_authentication_status(session):
         return session
@@ -371,13 +365,12 @@ def set_wp_page_text(session, title, text, summary):
     if not get_wp_authentication_status(session):
         print("Session is not authenticated! Aborting.")
         return False
-    URL = "https://ru.wikipedia.org/w/api.php"
     PARAMS_4 = {
         "action": "query",
         "meta":   "tokens",
         "format": "json"
     }
-    response = session.get(url=URL, params=PARAMS_4)
+    response = session.get(url=script_config["api_url"], params=PARAMS_4)
     csrf_token = response.json()['query']['tokens']['csrftoken']
 
     # POST request to edit a page
@@ -391,7 +384,7 @@ def set_wp_page_text(session, title, text, summary):
         "format":   "json"
     }
 
-    response = session.post(url=URL, data=PARAMS_5)
+    response = session.post(url=script_config["api_url"], data=PARAMS_5)
     print(response.json())
     if response.json()['edit']['result'] == "Success":
         return True
@@ -468,41 +461,38 @@ def get_wp_categories(pagenames):
         result.append(page_cats)
     return result
 
-def get_redirect_target_web(page_name):
-    API_URL = "https://ru.wikipedia.org/w/api.php"
-    
-    # Получаем целевую страницу для редиректа
-    get_target = {
-        "action": "query",
-        "format": "json",
-        "titles": page_name,
-        "redirects": "1"
-    }
-    res = requests.get(API_URL, params=get_target).json()
+# def get_redirect_target_web(page_name):
+    # # Получаем целевую страницу для редиректа
+    # get_target = {
+        # "action": "query",
+        # "format": "json",
+        # "titles": page_name,
+        # "redirects": "1"
+    # }
+    # res = requests.get(script_config["api_url"], params=get_target).json()
 
-    try:
-        redirects = res.get("query", {}).get("redirects", [])
-        if redirects:
-            #target_title = redirects[0]["to"]
-            return redirects[0]["to"]
-            # r.set(f"wiki:redirect:{page_name}", target_title)
-            # count += 1
-    except Exception as e:
-        print(f"Ошибка: {e}")
+    # try:
+        # redirects = res.get("query", {}).get("redirects", [])
+        # if redirects:
+            # #target_title = redirects[0]["to"]
+            # return redirects[0]["to"]
+            # # r.set(f"wiki:redirect:{page_name}", target_title)
+            # # count += 1
+    # except Exception as e:
+        # print(f"Ошибка: {e}")
 
-def get_redirect_target(page_name,r):
-    cached_redirect = r.get(f"page:isredirect:{page_name}")
-    if cached_redirect:
-        print(f"  <<< Have cached isredirect for {page_name}")
-        cached_redirect_target = r.get(f"page:redirect:{page_name}")
-        if cached_redirect_target:
-            print(f"  <<< GOOD! Have cached redirect target for {page_name}")
-            return cached_redirect_target
-        else:
-            redirect_target = get_redirect_target_web(page_name)
-            r.setex(f"page:redirect:{redirect_target}", datetime.timedelta(hours=ttl_hours), value=1)
-    else:
-        return page_name
+# def get_redirect_target(page_name,r):
+    # cached_redirect = r.get(f"page:isredirect:{page_name}")
+    # if cached_redirect:
+        # print(f"  <<< Have cached isredirect for {page_name}")
+        # cached_redirect_target = r.get(f"page:redirect:{page_name}")
+        # if cached_redirect_target:
+            # print(f"  <<< GOOD! Have cached redirect target for {page_name}")
+            # return cached_redirect_target
+        # redirect_target = get_redirect_target_web(page_name)
+        # r.setex(f"page:redirect:{redirect_target}", datetime.timedelta(hours=ttl_hours), value=1)
+    # else:
+        # return page_name
 
 def get_disambigs(dis_pages,r):
     print("get_disambigs invoked! ===")
@@ -511,10 +501,7 @@ def get_disambigs(dis_pages,r):
     long_redirects = []
     dis_page_names = []
     session = requests.Session()
-    URL = "https://ru.wikipedia.org/w/api.php"
     # Redis fun
-    # r = redis.Redis(host=REDIS_HOST, password="mypass123==", decode_responses=True)
-    # ttl_hours = 96
     ttl_hours = 336
     for dis_page in dis_pages:
         # instantly omit trash links
@@ -522,12 +509,10 @@ def get_disambigs(dis_pages,r):
            re.search(r"\]", dis_page.link):
             print(f"Skipping trash link: {dis_page.link}")
             continue
-  
         # Redis fun
         # 4 - no page, 1 - ordinary, 2 - disambig, 3 - redirect
         # FIXME WTF! Why it's here?
         red_cached = r.get(f"page:status:{dis_page.link}") 
-        
         if red_cached:
             # print(f"  >>> Have cached {dis_page.link} : {red_cached}")
             if red_cached == "4":
@@ -546,11 +531,9 @@ def get_disambigs(dis_pages,r):
             # print(f"  XXX Have no cached {dis_page.link}")
             dis_page_names.append(dis_page.link)
     # dis_page_batch = '|'.join(dis_page_names)
-    
-    
+
     # Get target of link: ordinary page, redirect, or redlink
     for mb_page in get_wp_categories(dis_page_names):
-        
         # print(f"checkin {mb_page['title']} ... ===")
         # if mb_page['title'] == "Ли Тхай То":
             # print(mb_page)
@@ -565,22 +548,6 @@ def get_disambigs(dis_pages,r):
             else:
                 # print(f"  <<< Caching {mb_page['title']} as an ordinary page (1)")
                 r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
-            # try:
-                # # It's a disambig or an ordinary page
-                # is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
-                # result[mb_page['title']] = is_disambig
-                # # Redis fun
-                # if is_disambig:
-                    # print(f"Caching {mb_page['title']} as a disambig (2)")
-                    # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
-                # else:
-                    # ##print(f"Caching {mb_page['title']} as an ordinary page (1)")
-                    # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
-            # except Exception as e:
-                # print(f"Something wrong with redirect caching!")
-                # print(e)
-                # print(mb_page)
-                # sys.exit(5)
         else:
             # Check if it is a redirect or just a red link
             if mb_page['missing']:
@@ -592,21 +559,10 @@ def get_disambigs(dis_pages,r):
             else:
                 # If it's a redirect, then check it later
                 redirects.append(mb_page['title'])
-                # print(f"  ==  Adding {mb_page['title']} to redirect list")
-                # Redis fun
-                # print(f"  <<< Caching {mb_page['title']} as a redirect (3)")
-                # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=3)
-        # if mb_page['title'] == "Наволок":
-            # print(mb_page)
-            # print(is_disambig)
-            # print(result)
-            # sys.exit(5)
-                
     # If there are no redirects, then just return disambig status for pages
     if not len(redirects):
         # print("no redirects to check,", redirects)
         return result,[]
-        
     # If there are redirects, then check them
     print("Invoke redirect checker for", len(redirects), "pages")
     # Resolve redirects
@@ -620,7 +576,7 @@ def get_disambigs(dis_pages,r):
         'format': "json"
     }
     ##print(REQUEST_PARAMS)
-    response2 = session.get(url=URL, params=REQUEST_PARAMS)
+    response2 = session.get(url=script_config["api_url"], params=REQUEST_PARAMS)
     if not "redirects" in response2.json()['query']:
         print("Cannot find redirects!")
         print(response2.json()['query'])
@@ -671,7 +627,6 @@ def get_disambigs(dis_pages,r):
         result[mb_page['title']] = is_disambig
         ##print(f"now lets find {mb_page['title']} in redirect_pairs")
         ##print(redirect_pairs)
-        
         for pair in redirect_pairs:
             if pair['to'] == mb_page['title']:
                 result[pair['from']] = is_disambig
@@ -685,14 +640,47 @@ def get_disambigs(dis_pages,r):
                     r.setex(f"page:status:{pair['from']}", datetime.timedelta(hours=ttl_hours), value=1)
     return result,long_redirects
 
-def parse_check_template(template_text):
+def parse_check_template(template_text,target_page):
     """
     Parse template text to dict
     """
     template_dict = {}
     mc2 = re.findall(r"\|([\-_ a-zA-Z0-9\n]*)\=([^\|}]*)", template_text)
+    # just text parsing
     for m in mc2:
         template_dict[ m[0].strip() ] = m[1].strip()
+
+    ### more smart data ###
+
+    # cooldown things
+    # last timestamp as datetime
+    if 'timestamp' in template_dict.keys():
+        template_dict["timestamp_date"] = dateutil.parser.parse(template_dict['timestamp'])
+    else:
+        template_dict["timestamp_date"] = datetime.datetime.fromtimestamp(0)
+    # time_cooldown in days
+    # is it okay to use "try" like this?..
+    try:
+        template_dict["time_cooldown"] = script_config["project"][target_page]["time_cooldown"]
+    except KeyError:
+        print("No specific time_cooldown found, using a default one.")
+        template_dict["time_cooldown"] = script_config["time_cooldown"]
+    # cooldown_threshold - when should check next time
+    template_dict["cooldown_threshold"] = \
+      template_dict["timestamp_date"] + datetime.timedelta(days=template_dict["time_cooldown"])
+    # is it old enough
+    if datetime.datetime.now() > template_dict["cooldown_threshold"]:
+        template_dict["old_enough"] = True
+    else:
+        template_dict["old_enough"] = False
+
+    # overdated_threshold - how many dates can be wikified
+    try:
+        template_dict["overdated_threshold"] = \
+          script_config["project"][target_page]["overdated_threshold"]
+    except KeyError:
+        print("No specific overdated_threshold found, using a default one.")
+        template_dict["overdated_threshold"] = script_config["overdated_threshold"]
     return template_dict
 
 def get_norefs_nolinks_content(viet_page_content):
@@ -701,7 +689,6 @@ def get_norefs_nolinks_content(viet_page_content):
     sections = get_wp_page_sections(viet_page_content)
     for section in sections:
         if not re.search(r"Литература|Примечания|Источники|Ссылки", section['name']):
-            
             result.append("### " + section['name'] + " ###")
             result.append(section['content'])
     full_content = "\n\n".join(result)

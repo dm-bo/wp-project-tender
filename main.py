@@ -3,16 +3,12 @@ Script/bot to search for issues in the Wikipedia project
 For details, please see https://ru.wikipedia.org/wiki/Участник:KlientosBot
 """
 
+import sys
 import datetime
-from dateutil.parser import parse
-
-from jinja2 import Environment, FileSystemLoader
-
 # for projects shuffling
 import random
 
-# Redis fun
-import redis
+from jinja2 import Environment, FileSystemLoader
 
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
@@ -22,7 +18,7 @@ from wp_functions_check import *
 # import update_list
 
 from wp_auth_data import *
-from config import get_redis_client
+from config import get_redis_client, get_tender_config
 
 # TODO check Template:Чистить| (problem)
 # TODO check if no {{references}} but has <ref> or {{sfn}}
@@ -52,23 +48,8 @@ moment_start = datetime.datetime.now()
 dis_or_not = {}
 session = get_wp_authenticated_session(wp_login, wp_passw)
 
-UPDATES = [
-    {'date': datetime.datetime(2023, 10, 17, 22, 22),
-     'text': "Новая проверка: Архив добавлен ботом"},
-    {'date': datetime.datetime(2023, 11, 4, 0, 29),
-     'text': "Скрипт переведён на python. Возможны некоторые изменения в формате выдачи, " + \
-        "сортировке и результатах проверок."},
-    {'date': datetime.datetime(2023, 11, 6, 23, 12),
-     'text': "Добавлена проверка неформатных дат в accessdate/access-date"},
-    {'date': datetime.datetime(2023, 11, 14, 23, 20),
-     'text': "Добавлена проверка неформатных дат в datepublished (алиас для date)"},
-    {'date': datetime.datetime(2023, 11, 14, 23, 40),
-     'text': "Теперь можно добавлять произвольный текст в конец страницы (например, категории)"},
-    {'date': datetime.datetime(2023, 11, 15, 18, 00),
-     'text': "Добавлен поиск ссылок на страницы неоднозначностей."},
-    {'date': datetime.datetime(2023, 11, 27, 14, 20),
-     'text': "Добавлен поиск неформатных чисел (1.234.567 и пр.)."}
-]
+# Script config
+script_config = get_tender_config()
 
 # Redis fun
 red_con = get_redis_client()
@@ -79,15 +60,8 @@ red_con = get_redis_client()
 
 # NS 104 - project discussions
 result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
-print("Got pages by template =", result_pages)
-
-if True:
-    random.shuffle(result_pages)
-    print("Pages by template randomized =", result_pages)
-
-if False:
-    result_pages = result_pages[:5]
-    print("Pages by template sliced =", result_pages)
+random.shuffle(result_pages)
+print("Pages by template randomized =", result_pages)
 
 # iterate over found projects
 for post_results_page in result_pages:
@@ -97,8 +71,7 @@ for post_results_page in result_pages:
     exclude_pages = []
     # prologue = ""
     epilogue = ""
-    post_results = False
-    # post_results_page = ""
+    # FIXME this limit doesn't work (see SPb category)
     pages_limit = 50000
     summary = "плановое обновление данных"
     checks_enabled = {
@@ -109,10 +82,6 @@ for post_results_page in result_pages:
         "Disambigs": False,
         "UglyRedirects": False
     }
-    # default:
-    # time_cooldown = 5
-    time_cooldown = 14
-    OVERDATED_THRESHOLD = 10
 
     # result disambigs
     disambigs = []
@@ -121,78 +90,27 @@ for post_results_page in result_pages:
     # maybe we'll need this info (not yet)
     cannot_check = []
 
-    # Test mode
-    # ## if post_results_page != "Проект:Татарстан/Недостатки статей":
-    # if post_results_page != "Проект:Вьетнам/Недостатки статей":
-        # print(f"TEST MODE: Skipping {post_results_page}")
-        # continue
-    # else:
-        # print(f"TEST MODE: Working on {post_results_page}")
-
-    post_results = True
-    # Some custom hacks
-    if post_results_page == "Проект:Вьетнам/Недостатки статей":
-        # pylint: disable=unnecessary-pass
-        # post_results = False
-        # time_cooldown = 1
-        #
-        OVERDATED_THRESHOLD = 14
-        pass
-    if post_results_page == "Проект:Православие/Недостатки статей/Православное богословие":
-        # post_results = False
-        # time_cooldown = 0
-        pass
-    if post_results_page == "Проект:Санкт-Петербург/Недостатки статей категории":
-        # post_results = False
-        time_cooldown = 5
-        pass
-    if post_results_page == "Проект:Мифология/Недостатки статей":
-        # post_results = False
-        time_cooldown = 5
-        pass
-    if post_results_page == "Проект:Холокост/Недостатки статей":
-        # post_results = False
-        # time_cooldown = 2500
-        # as requested
-        # TODO move to the template as an option
-        OVERDATED_THRESHOLD = 30
-
     # Checking that result page is not too fresh
-    # Searching for actual updates
-
-    time_threshold = datetime.datetime.now() - datetime.timedelta(days=time_cooldown)
     result_content = get_wp_pages_content([post_results_page],red_con)
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
         result_content[0][0]['content'])
     template_options = ""
     if mc1:
-        check_template = parse_check_template(mc1[0])
+        check_template = parse_check_template(mc1[0], post_results_page)
         print(check_template)
-        if 'timestamp' in check_template.keys():
-            previous_timestamp = parse(check_template['timestamp'])
-        else:
-            previous_timestamp = datetime.datetime.now() - datetime.timedelta(days=time_cooldown+1)
-        if previous_timestamp > time_threshold:
-            # print("time_cooldown", time_cooldown)
-            # print("time_threshold", time_threshold)
-            # print("previous_timestamp", previous_timestamp)
+        # check_template["timestamp_date"]
+        # check_template["overdated_threshold"]
+        if not check_template["old_enough"]:
             print("Not old enough, skipping")
             continue
-        actual_updates = []
-        for UPDATE in UPDATES:
-            if UPDATE['date'] > previous_timestamp:
-                actual_updates.append(UPDATE['text'])
-        if actual_updates:
-            summary = summary + ", обновление скрипта"
-        has_bot_template = True
         # making options for a new template
         check_template_new = check_template
         check_template_new['timestamp'] = datetime.datetime.now()
         for key, value in check_template_new.items():
             template_options = template_options + f"|{key}={value} "
     else:
-        has_bot_template = False
-        actual_updates = []
+        print("No bot template found! Exiting.")
+        sys.exit(46)
 
     ### Working on template options
     # enable_checks
@@ -264,14 +182,6 @@ for post_results_page in result_pages:
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
         get_wp_pages_content(viet_pages=viet_pages,r=red_con,limit=pages_limit)
-
-    # checks.append(Check(
-        # name="Total2",
-        # title="Всего 2",
-        # pages=["None", "None"],
-        # total=len(viet_pages),
-        # supress_listing=True)
-    # )
 
     #print("Total pages retrieved:", len(viet_pages_content), "of", len(viet_pages))
     #print("Not patrolled:", len(viet_pages_old_patrolled), "and", len(viet_pages_not_patrolled))
@@ -710,7 +620,7 @@ for post_results_page in result_pages:
         pages=check_wp_centuries(viet_pages_content),
         total=len(viet_pages))
     )
-    
+
     if checks_enabled["Experimental"]:
         checks.append(Check(
             name="BadDelimiters",
@@ -749,19 +659,13 @@ for post_results_page in result_pages:
             date_links.append(link)
 
     sorted_dates = sorted(date_links, key=lambda x: x.page, reverse=True)
-    #sorted_dates = sorted(date_links, key=link)
-    # print(sorted_dates)
-    # grouped_dates = [list(g[1]) for g in groupby(sorted_dates, page)]
     grouped_dates = [list(result) for key, result in groupby(
         sorted_dates, key=lambda olink: olink.page)]
-    # print(grouped_dates)
-    # print("===")
-    # print(datetime.datetime.now(), "work on links done")
 
     sorted_counted_dates = []
     for page in grouped_dates:
         # print(page[0].page, len(page))
-        if len(page) > OVERDATED_THRESHOLD:
+        if len(page) > check_template["overdated_threshold"]:
             sorted_counted_dates.append({
                 "page": page[0].page,
                 "count": len(page)
@@ -796,41 +700,24 @@ for post_results_page in result_pages:
         BATCH_HARD_LIMIT = 50
         BATCH_LENGTH = 1300
         batch_unknown = []
-        
+
         da_total,da_cache_hits = 0,0
         for il in internal_links:
             da_total += 1
-            
             i = i + 1
             il.link = il.link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
             il.link = re.sub("#.*$","", il.link)
-            
-            # try:
-                # red_cached = r.get(f"page:status:{il.link}")
-                # print(f"Got cached value for {il.link}")
-            # except redis.exceptions.TimeoutError::
-                # print(f"Timeout error while getting cached value for page:status:{il.link}")
-                # print(f"(Project is {post_results_page})")
-            # except Exception as e:
-                # print(f"Something went wrong while getting cached value for page:status:{il.link}: {e}")
-                # print(f"(Project is {post_results_page})")
             red_cached = red_con.get(f"page:status:{il.link}")
-            #print(f"Got cached value for {il.link}")
-            # print(f"{il.link} : {red_cached}")
             if il.link == "":
-                ##print(f"PRE-CACHE: {red_cached} - PASSED!")
                 pass
             elif red_cached == "4" or red_cached == "1":
-                ##print(f"PRE-CACHE: {il.link} is a redlilnk or on ordinary page")
                 da_cache_hits += 1
-                pass
             elif red_cached == "2":
-                ##print(f"PRE-CACHE: {il.link} is a redirect!")
                 da_cache_hits += 1
                 disambigs.append(il)
             # elif red_cached == 3:
                 # print(f"{red_cached} is a redirect")
-                # redirects.append(mb_page['title'])    
+                # redirects.append(mb_page['title'])
             elif not il.link in dis_or_not:
                 batch_unknown.append(il)
             elif dis_or_not[il.link]:
@@ -855,8 +742,10 @@ for post_results_page in result_pages:
                     elif dis_or_not[ib2]:
                         disambigs.append(ib)
                 batch_unknown = []
-            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs checked ({da_total} of {len(internal_links)});", \
-                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, {round(100*da_cache_hits/len(internal_links), 3)}% in total")
+            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs \
+                checked ({da_total} of {len(internal_links)});", \
+                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, \
+                {round(100*da_cache_hits/len(internal_links), 3)}% in total")
         disambig_ordered = {}
         for da in disambigs:
             if not da.page in disambig_ordered:
@@ -940,7 +829,6 @@ for post_results_page in result_pages:
         viet_pages_not_patrolled = viet_pages_not_patrolled,
         viet_pages_old_patrolled = viet_pages_old_patrolled,
         checks = checks,
-        updates = actual_updates,
         template_options = template_options
     )
 
@@ -955,15 +843,11 @@ for post_results_page in result_pages:
 
     # Web
 
-    if not post_results:
-        print("Posting skipped (disabled).")
-    elif not has_bot_template:
-        print("Posting skipped (no template on the page).")
-    elif set_wp_page_text(session, post_results_page, content, summary):
+    if set_wp_page_text(session, post_results_page, content, summary):
         print("Updated.")
     else:
         print("Cannot update page.")
 
     ### Stats ###
-    print("Checked", len(dis_or_not), "of", len(internal_links))
+    print("Checked", len(dis_or_not), "of", len(internal_links), "internal links.")
     print(datetime.datetime.now()-moment_start)

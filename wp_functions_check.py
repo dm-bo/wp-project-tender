@@ -170,16 +170,7 @@ def check_wp_links_unavailable(viet_pages_content):
             # TODO rework hack
             nc = []
             for m in re.findall(rx, page['content']):
-                if re.search(r"http://[\.a-z]*lib.ru/", m):
-                    nc.append(m.replace('http://',''))
-                    # nc.append("(ссылка скрыта)")
-                elif re.search(r"https://[\.a-z]*lib.ru/", m):
-                    nc.append(m.replace('https://',''))
-                    # nc.append("(ссылка скрыта)")
-                elif re.search(r"http[s]*://[\.a-z]*stihi.ru/", m):
-                    nc.append(m.replace('http[s]*://',''))
-                else:
-                    nc.append(m.replace('http://','').replace('https://',''))
+                nc.append(m.replace('http://','').replace('https://',''))
             # was
             #  samples=re.findall(rx, page['content'])))
             result.append(ProblemPage(title=page['title'],counter=len(mc),
@@ -196,19 +187,7 @@ def check_wp_naked_links(viet_pages_content):
             # TODO rework hack
             nc = []
             for m in mc:
-                if re.search(r"http://[\.a-z]*lib.ru/", m):
-                    nc.append(m.replace('http://',''))
-                elif re.search(r"https://[\.a-z]*lib.ru/", m):
-                    nc.append(m.replace('https://',''))
-                elif re.search(r"://nobility.pro", m):
-                    nc.append(m.replace('http[s]*://',''))
-                elif re.search(r"http[s]*://", m):
-                    # remove http(s) everywhere
-                    # nc.append(m.replace('http[s]*://',''))
-                    nc.append(m.replace('http://','').replace('https://',''))
-                else:
-                    # WTF?
-                    nc.append(m)
+                nc.append(m.replace('http://','').replace('https://',''))
             result.append(ProblemPage(title=page['title'],samples=nc))
     return result
 
