@@ -179,7 +179,7 @@ def check_wp_links_unavailable(viet_pages_content):
                 elif re.search(r"http[s]*://[\.a-z]*stihi.ru/", m):
                     nc.append(m.replace('http[s]*://',''))
                 else:
-                    nc.append(m)
+                    nc.append(m.replace('http://','').replace('https://',''))
             # was
             #  samples=re.findall(rx, page['content'])))
             result.append(ProblemPage(title=page['title'],counter=len(mc),
@@ -198,13 +198,16 @@ def check_wp_naked_links(viet_pages_content):
             for m in mc:
                 if re.search(r"http://[\.a-z]*lib.ru/", m):
                     nc.append(m.replace('http://',''))
-                    # nc.append("(ссылка скрыта)")
                 elif re.search(r"https://[\.a-z]*lib.ru/", m):
                     nc.append(m.replace('https://',''))
                 elif re.search(r"://nobility.pro", m):
                     nc.append(m.replace('http[s]*://',''))
-                    # nc.append("(ссылка скрыта)")
+                elif re.search(r"http[s]*://", m):
+                    # remove http(s) everywhere
+                    # nc.append(m.replace('http[s]*://',''))
+                    nc.append(m.replace('http://','').replace('https://',''))
                 else:
+                    # WTF?
                     nc.append(m)
             result.append(ProblemPage(title=page['title'],samples=nc))
     return result
@@ -222,9 +225,9 @@ def check_wp_links_in_text(viet_pages_content):
             result.append(ProblemPage(title=page['title'],samples=mc))
     return result
 
-def check_wp_no_cats(viet_pages_content):
+def check_wp_no_cats(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'])
+    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'],r)
     # searches for [[:Шаблон: or [[Шаблон: on the page
     exclude_templates = re.findall(r"\[\[[\:]*Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
@@ -239,9 +242,9 @@ def check_wp_no_cats(viet_pages_content):
             result.append(ProblemPage(title=page['title']))
     return result
 
-def check_wp_no_links_in_links(viet_pages_content):
+def check_wp_no_links_in_links(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'])
+    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
     exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     for page in viet_pages_content:
         # nothing to do if there is no "Ссылки" section

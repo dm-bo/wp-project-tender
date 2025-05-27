@@ -11,6 +11,9 @@ from jinja2 import Environment, FileSystemLoader
 # for projects shuffling
 import random
 
+# Redis fun
+import redis
+
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_disambigs, get_wp_pages_by_category_recurse
@@ -19,6 +22,7 @@ from wp_functions_check import *
 # import update_list
 
 from wp_auth_data import *
+from config import get_redis_client
 
 # TODO check Template:Чистить| (problem)
 # TODO check if no {{references}} but has <ref> or {{sfn}}
@@ -66,6 +70,9 @@ UPDATES = [
      'text': "Добавлен поиск неформатных чисел (1.234.567 и пр.)."}
 ]
 
+# Redis fun
+red_con = get_redis_client()
+
 ###############################
 ###### ITERATE FROM HERE ######
 ###############################
@@ -74,9 +81,15 @@ UPDATES = [
 result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
 print("Got pages by template =", result_pages)
 
-random.shuffle(result_pages)
-# print(result_pages)
+if True:
+    random.shuffle(result_pages)
+    print("Pages by template randomized =", result_pages)
 
+if False:
+    result_pages = result_pages[:5]
+    print("Pages by template sliced =", result_pages)
+
+# iterate over found projects
 for post_results_page in result_pages:
     print("")
     print("Working on", post_results_page)
@@ -86,7 +99,7 @@ for post_results_page in result_pages:
     epilogue = ""
     post_results = False
     # post_results_page = ""
-    pages_limit = 5000
+    pages_limit = 50000
     summary = "плановое обновление данных"
     checks_enabled = {
         "CiteDecorations": True,
@@ -98,7 +111,7 @@ for post_results_page in result_pages:
     }
     # default:
     # time_cooldown = 5
-    time_cooldown = 5
+    time_cooldown = 14
     OVERDATED_THRESHOLD = 10
 
     # result disambigs
@@ -121,7 +134,7 @@ for post_results_page in result_pages:
     if post_results_page == "Проект:Вьетнам/Недостатки статей":
         # pylint: disable=unnecessary-pass
         # post_results = False
-        # time_cooldown = 0
+        # time_cooldown = 1
         #
         OVERDATED_THRESHOLD = 14
         pass
@@ -129,17 +142,17 @@ for post_results_page in result_pages:
         # post_results = False
         # time_cooldown = 0
         pass
-    if post_results_page == "Проект:Санкт-Петербург/Недостатки статей":
+    if post_results_page == "Проект:Санкт-Петербург/Недостатки статей категории":
         # post_results = False
-        # time_cooldown = 0
+        time_cooldown = 5
         pass
-    if post_results_page == "Проект:Татарстан/Недостатки статей":
+    if post_results_page == "Проект:Мифология/Недостатки статей":
         # post_results = False
-        # time_cooldown = 0
+        time_cooldown = 5
         pass
     if post_results_page == "Проект:Холокост/Недостатки статей":
         # post_results = False
-        # time_cooldown = 25
+        # time_cooldown = 2500
         # as requested
         # TODO move to the template as an option
         OVERDATED_THRESHOLD = 30
@@ -148,7 +161,7 @@ for post_results_page in result_pages:
     # Searching for actual updates
 
     time_threshold = datetime.datetime.now() - datetime.timedelta(days=time_cooldown)
-    result_content = get_wp_pages_content([post_results_page])
+    result_content = get_wp_pages_content([post_results_page],red_con)
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
         result_content[0][0]['content'])
     template_options = ""
@@ -212,7 +225,7 @@ for post_results_page in result_pages:
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
         if not check_template['except_pages'] == '':
-            excludes_content = get_wp_pages_content([check_template['except_pages']])
+            excludes_content = get_wp_pages_content([check_template['except_pages']],red_con)
             exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
     else:
         exclude_pages = []
@@ -250,7 +263,7 @@ for post_results_page in result_pages:
     ### Patrolling ####
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
-        get_wp_pages_content(viet_pages=viet_pages,limit=pages_limit)
+        get_wp_pages_content(viet_pages=viet_pages,r=red_con,limit=pages_limit)
 
     # checks.append(Check(
         # name="Total2",
@@ -303,7 +316,7 @@ for post_results_page in result_pages:
         title="Статьи без ссылок в разделе «Ссылки»",
         descr="Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит " + \
             "переместить в раздел «Литература».",
-        pages=check_wp_no_links_in_links(viet_pages_content),
+        pages=check_wp_no_links_in_links(viet_pages_content,r=red_con),
         total=len(viet_pages))
     )
 
@@ -369,7 +382,7 @@ for post_results_page in result_pages:
         descr="Иногда категории назначаются шаблонами, тогда указывать категории напрямую не " +
             "нужно. В таком случае категоризирующий шаблон следует учитывать при составлении " +
             "этого списка.",
-        pages=check_wp_no_cats(viet_pages_content),
+        pages=check_wp_no_cats(viet_pages_content,r=red_con),
         total=len(viet_pages))
     )
 
@@ -783,15 +796,45 @@ for post_results_page in result_pages:
         BATCH_HARD_LIMIT = 50
         BATCH_LENGTH = 1300
         batch_unknown = []
+        
+        da_total,da_cache_hits = 0,0
         for il in internal_links:
+            da_total += 1
+            
             i = i + 1
             il.link = il.link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
             il.link = re.sub("#.*$","", il.link)
+            
+            # try:
+                # red_cached = r.get(f"page:status:{il.link}")
+                # print(f"Got cached value for {il.link}")
+            # except redis.exceptions.TimeoutError::
+                # print(f"Timeout error while getting cached value for page:status:{il.link}")
+                # print(f"(Project is {post_results_page})")
+            # except Exception as e:
+                # print(f"Something went wrong while getting cached value for page:status:{il.link}: {e}")
+                # print(f"(Project is {post_results_page})")
+            red_cached = red_con.get(f"page:status:{il.link}")
+            #print(f"Got cached value for {il.link}")
+            # print(f"{il.link} : {red_cached}")
             if il.link == "":
+                ##print(f"PRE-CACHE: {red_cached} - PASSED!")
                 pass
+            elif red_cached == "4" or red_cached == "1":
+                ##print(f"PRE-CACHE: {il.link} is a redlilnk or on ordinary page")
+                da_cache_hits += 1
+                pass
+            elif red_cached == "2":
+                ##print(f"PRE-CACHE: {il.link} is a redirect!")
+                da_cache_hits += 1
+                disambigs.append(il)
+            # elif red_cached == 3:
+                # print(f"{red_cached} is a redirect")
+                # redirects.append(mb_page['title'])    
             elif not il.link in dis_or_not:
                 batch_unknown.append(il)
             elif dis_or_not[il.link]:
+                print(f"NOTICE: {dis_or_not[il.link]} in dis_or_not, but not in Redis cache!")
                 disambigs.append(il)
             #if len(batch_unknown) > batch_size:
             if sum(len(s.link) for s in batch_unknown) > BATCH_LENGTH or \
@@ -799,7 +842,7 @@ for post_results_page in result_pages:
                 print("Checker invoked", i, "/", len(internal_links),
                     "( len", sum(len(s.link) for s in batch_unknown),
                     ", items", len(batch_unknown), ")")
-                dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown)
+                dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown,red_con)
                 dis_or_not.update(dis_or_not_append)
                 long_redirects = long_redirects + long_redirects_append
                 long_redirects = long_redirects + long_redirects_append
@@ -812,6 +855,8 @@ for post_results_page in result_pages:
                     elif dis_or_not[ib2]:
                         disambigs.append(ib)
                 batch_unknown = []
+            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs checked ({da_total} of {len(internal_links)});", \
+                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, {round(100*da_cache_hits/len(internal_links), 3)}% in total")
         disambig_ordered = {}
         for da in disambigs:
             if not da.page in disambig_ordered:
@@ -835,7 +880,8 @@ for post_results_page in result_pages:
             pages=disambig_problems,
             total=len(viet_pages))
         )
-    if checks_enabled["UglyRedirects"]:
+
+    if False or checks_enabled["UglyRedirects"]:
         # side-product
         long_redirects_set = set(long_redirects)
         long_redirects = list(long_redirects_set)

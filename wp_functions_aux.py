@@ -4,6 +4,36 @@ import re
 import datetime
 import requests
 import dateutil.parser  # pip install python-dateutil
+import time # for sleep
+
+# Redis fun
+import redis
+#for str to dict 
+import ast
+
+REDIS_HOST = "172.28.249.117"
+
+def get_wp_page_content(url,params):
+    limit = 3
+    i = 0
+    sleep_timeout = 10
+    while i < limit:
+        i += 1
+        session = requests.Session()
+        try:
+            response = session.get(url=url, params=params)
+        except:
+            print(f"Error getting page ({i}), waiting {sleep_timeout} seconds...")
+            print("..........")
+            time.sleep(sleep_timeout)
+            continue
+        if response.status_code == 200:
+            return response
+        else:
+            print(f"Got responce {response.status_code}, waiting {sleep_timeout} seconds and retry...")
+            print("..........")
+            time.sleep(sleep_timeout)
+    return False
 
 # gets template name
 # returns array of page names
@@ -49,12 +79,13 @@ def get_wp_pages_by_category(category, namespace=1):
         "format": "json",
         "cmlimit": 500
     }
-    session = requests.Session()
+    # session = requests.Session()
     result = []
     have_data_to_get = True
     PARAMS_1 = PARAMS_0
     while have_data_to_get:
-        response = session.get(url=api_url, params=PARAMS_1)
+        # response = session.get(url=api_url, params=PARAMS_1)
+        response = get_wp_page_content(api_url, PARAMS_1)
         # print(response.json())
         for page in response.json()['query']['categorymembers']:
             if page['ns'] == namespace or \
@@ -103,12 +134,37 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
         f"{len(cats)} categories left.")
     return pages
 
-def get_wp_pages_content(viet_pages,limit=100000):
+def parse_page_data(page_data,pages_content,pages_old_pat,pages_not_pat):
+    # if re.search(r"Постановление", page['title']):
+        # print(page)
+    if not 'flagged' in page_data.keys():
+        pages_not_pat.append(page_data['title'])
+    elif 'pending_since' in page_data['flagged'].keys():
+        next_old_patrolled = {
+            "title": page_data['title'],
+            "date": dateutil.parser.isoparse(page_data['flagged']['pending_since'])
+        }
+        pages_old_pat.append(next_old_patrolled)
+        #print("Old flagged", page['title'], '(since', str(date_patrolled), ')')
+    else:
+        pass
+    # print(page)
+    next_page =  {
+        "title": page_data['title'],
+        "content": page_data['revisions'][0]['slots']['main']['content']
+    }
+    pages_content.append(next_page)
+    return pages_content,pages_old_pat,pages_not_pat
+
+def get_wp_pages_content(viet_pages,r,limit=100000):
     batch_size = 10
     viet_pages_content = []
-
     viet_pages_not_patrolled = []
     viet_pages_old_patrolled = []
+
+    # Redis
+    ttl_hours = 96
+    # internal list of pages to get from WP
     next_batch = []
     api_url = "http://ru.wikipedia.org/w/api.php"
     REQ_PARAMS = {
@@ -119,47 +175,81 @@ def get_wp_pages_content(viet_pages,limit=100000):
         "rvprop": "content",
         "rvslots": "*"
     }
-    session = requests.Session()
-    j = 0
+    # session = requests.Session()
+    j, j_web, j_red = 0, 0, 0
     for vp in viet_pages:
         j += 1
-        next_batch.append(vp)
-        # if j > 20:
-            # break
+        #paginas = []
+        if re.search(r"Проект\:", vp) or re.search(r"биография", vp):
+            red_cached = False
+        else:
+            red_cached = r.get(f"page:content:{vp}")
+        if red_cached:
+            # if have Redis cache
+            j_red += 1
+            pagina1 = ast.literal_eval(red_cached)
+            # print(f"  >>> Have redis cache for {vp} {len(pagina1['revisions'][0]['slots']['main']['content'])}")
+            viet_pages_content, viet_pages_old_patrolled, viet_pages_not_patrolled = \
+                parse_page_data(
+                    pagina1,
+                    viet_pages_content,
+                    viet_pages_old_patrolled,
+                    viet_pages_not_patrolled
+                )
+            
+            # print(paginas)
+        else:   
+            # if no then  do business with HTTP
+            j_web += 1
+            next_batch.append(vp)
         if j > limit:
+            # break if a huge limit is reached (millions)
             break
-        if len(next_batch) == batch_size or j == len(viet_pages):
+        if len(next_batch) == batch_size or (j == len(viet_pages) and len(next_batch) > 0):
             params_batch = REQ_PARAMS
             params_batch['titles'] = '|'.join(next_batch) #.replace("&","%26").replace("/","%2F")
-            # print(params_batch['titles'])
-            response = session.get(url=api_url, params=REQ_PARAMS)
-            for page in response.json()['query']['pages']:
-                # if re.search(r"Постановление", page['title']):
-                    # print(page)
-                if not 'flagged' in page.keys():
-                    viet_pages_not_patrolled.append(page['title'])
-                    #print("Not flagged", page['title'])
-                elif 'pending_since' in page['flagged'].keys():
-                    next_old_patrolled = {
-                        "title": page['title'],
-                        "date": dateutil.parser.isoparse(page['flagged']['pending_since'])
-                    }
-                    viet_pages_old_patrolled.append(next_old_patrolled)
-                    #print("Old flagged", page['title'], '(since', str(date_patrolled), ')')
-                else:
-                    pass
-                # print(page)
-                next_page =  {
-                    "title": page['title'],
-                    "content": page['revisions'][0]['slots']['main']['content']
-                }
-                viet_pages_content.append(next_page)
-            #print("Pages retrieved so far:", len(viet_pages_content))
-            # raise Exception("I know Python!")
             next_batch = []
+            print(params_batch['titles'])
+            # response = session.get(url=api_url, params=REQ_PARAMS)
+            response = get_wp_page_content(api_url, REQ_PARAMS)
+            try:
+                paginas = response.json()['query']['pages']
+            except:
+                print("==== Can't get paginas from response! ====")
+                print(f"Params: {params}")
+                print(response.json())
+                print(response.json()['query']['pages'])
+                exit(404)
+            for page in paginas:
+                # check if something wrong
+                if not type(paginas) == type([1, 2]):
+                    print("WARNING! Type of paginas is not a list!")
+                # cache it baby
+                if len(str(page)) > 102400:
+                    print(f"  <<< Going to cache data sized {round(len(str(page))/1024,0)}k")
+                r.setex(f"page:content:{page['title']}", datetime.timedelta(hours=ttl_hours), value=str(page))   
+                # add the pages we download
+                viet_pages_content, viet_pages_old_patrolled, viet_pages_not_patrolled = \
+                    parse_page_data(
+                        page,
+                        viet_pages_content,
+                        viet_pages_old_patrolled,
+                        viet_pages_not_patrolled
+                    )  
+        if j % 10 == 0 or j == 1 or j == len(viet_pages_content):
+            print("Pages processed so far:", j, f"of {len(viet_pages)}",
+                f"web requests: {j_web},",
+                f"cache hits {j_red} ({round(100*j_red/max(len(viet_pages_content),1),1)}% so far, {round(100*j_red/len(viet_pages),1)}% total)")
+    # TODO can be moved to the function
     viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
     viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
     viet_pages_old_patrolled = sorted(viet_pages_old_patrolled, key=lambda d: d['date'])
+    if not j_red + j_web == j:
+        print("CHECKSUM TILT!")
+        exit(61)
+    if not j_red + j_web == len(viet_pages_content):
+        print("CHECKSUM TILT type 2!")
+        exit(62)
     return viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled
 
 class OloloLink():
@@ -313,6 +403,8 @@ def get_wp_categories(pagenames):
     Get categories for pages.
     Can deal with API limit.
     """
+    if not pagenames:
+        return[]
     api_url = "http://ru.wikipedia.org/w/api.php"
     pagenames_batch = '|'.join(pagenames)
     # TODO change 500 to MAXLIMIT
@@ -324,7 +416,7 @@ def get_wp_categories(pagenames):
         'titles': pagenames_batch,
         'format': "json"
     }
-    session = requests.Session()
+    # session = requests.Session()
     result_dict = {}
     result = []
     have_data_to_get = True
@@ -333,7 +425,8 @@ def get_wp_categories(pagenames):
     while have_data_to_get:
         cat_len_tot = 0
         #time.sleep(3)
-        response = session.get(url=api_url, params=PARAMS_1)
+        # response = session.get(url=api_url, params=PARAMS_1)
+        response = get_wp_page_content(api_url, PARAMS_1)
         try:
             pages_dict = response.json()['query']["pages"]
         except:
@@ -375,47 +468,146 @@ def get_wp_categories(pagenames):
         result.append(page_cats)
     return result
 
-def get_disambigs(dis_pages):
+def get_redirect_target_web(page_name):
+    API_URL = "https://ru.wikipedia.org/w/api.php"
+    
+    # Получаем целевую страницу для редиректа
+    get_target = {
+        "action": "query",
+        "format": "json",
+        "titles": page_name,
+        "redirects": "1"
+    }
+    res = requests.get(API_URL, params=get_target).json()
+
+    try:
+        redirects = res.get("query", {}).get("redirects", [])
+        if redirects:
+            #target_title = redirects[0]["to"]
+            return redirects[0]["to"]
+            # r.set(f"wiki:redirect:{page_name}", target_title)
+            # count += 1
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
+def get_redirect_target(page_name,r):
+    cached_redirect = r.get(f"page:isredirect:{page_name}")
+    if cached_redirect:
+        print(f"  <<< Have cached isredirect for {page_name}")
+        cached_redirect_target = r.get(f"page:redirect:{page_name}")
+        if cached_redirect_target:
+            print(f"  <<< GOOD! Have cached redirect target for {page_name}")
+            return cached_redirect_target
+        else:
+            redirect_target = get_redirect_target_web(page_name)
+            r.setex(f"page:redirect:{redirect_target}", datetime.timedelta(hours=ttl_hours), value=1)
+    else:
+        return page_name
+
+def get_disambigs(dis_pages,r):
+    print("get_disambigs invoked! ===")
     result = {}
     redirects = []
     long_redirects = []
     dis_page_names = []
-    for dis_page in dis_pages:
-        dis_page_names.append(dis_page.link)
-    # dis_page_batch = '|'.join(dis_page_names)
     session = requests.Session()
     URL = "https://ru.wikipedia.org/w/api.php"
-    # PARAMS_1 = {
-        # 'action': "query",
-        # 'formatversion':   2,
-        # 'prop':   "categories",
-        # 'cllimit': 1000,
-        # 'titles': dis_page_batch,
-        # 'format': "json"
-    # }
-    # response = session.get(url=URL, params=PARAMS_1)
-    # for mb_page in response.json()['query']['pages']:
-    # print(get_wp_categories(dis_page_names))
+    # Redis fun
+    # r = redis.Redis(host=REDIS_HOST, password="mypass123==", decode_responses=True)
+    # ttl_hours = 96
+    ttl_hours = 336
+    for dis_page in dis_pages:
+        # instantly omit trash links
+        if re.search(r"\[", dis_page.link) or \
+           re.search(r"\]", dis_page.link):
+            print(f"Skipping trash link: {dis_page.link}")
+            continue
+  
+        # Redis fun
+        # 4 - no page, 1 - ordinary, 2 - disambig, 3 - redirect
+        # FIXME WTF! Why it's here?
+        red_cached = r.get(f"page:status:{dis_page.link}") 
+        
+        if red_cached:
+            # print(f"  >>> Have cached {dis_page.link} : {red_cached}")
+            if red_cached == "4":
+                ##print(f"{dis_page.link} is a redlilnk")
+                result[dis_page.link] = False
+            elif red_cached == "1":
+                ##print(f"{dis_page.link} is an ordinary page")
+                result[dis_page.link] = False
+            elif red_cached == "2":
+                ##print(f"{dis_page.link} is a disambig! (!)")
+                result[dis_page.link] = True
+            elif red_cached == "3":
+                ##print(f"{dis_page.link} is a redirect")
+                redirects.append(dis_page.link)
+        else:
+            # print(f"  XXX Have no cached {dis_page.link}")
+            dis_page_names.append(dis_page.link)
+    # dis_page_batch = '|'.join(dis_page_names)
+    
+    
+    # Get target of link: ordinary page, redirect, or redlink
     for mb_page in get_wp_categories(dis_page_names):
+        
+        # print(f"checkin {mb_page['title']} ... ===")
         # if mb_page['title'] == "Ли Тхай То":
             # print(mb_page)
         #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
-            try:
-                result[mb_page['title']] = \
-                    "Категория:Страницы значений по алфавиту" in mb_page['categories']
-            except:
-                print(mb_page)
-                sys.exit(5)
-        else:
-            if mb_page['missing']:
-                result[mb_page['title']] = False
+            is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
+            result[mb_page['title']] = is_disambig
+            # Redis fun
+            if is_disambig:
+                # print(f"  <<< Caching {mb_page['title']} as a disambig (2)")
+                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
             else:
+                # print(f"  <<< Caching {mb_page['title']} as an ordinary page (1)")
+                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
+            # try:
+                # # It's a disambig or an ordinary page
+                # is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
+                # result[mb_page['title']] = is_disambig
+                # # Redis fun
+                # if is_disambig:
+                    # print(f"Caching {mb_page['title']} as a disambig (2)")
+                    # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
+                # else:
+                    # ##print(f"Caching {mb_page['title']} as an ordinary page (1)")
+                    # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
+            # except Exception as e:
+                # print(f"Something wrong with redirect caching!")
+                # print(e)
+                # print(mb_page)
+                # sys.exit(5)
+        else:
+            # Check if it is a redirect or just a red link
+            if mb_page['missing']:
+                # Red lisk is obviously not a disambig
+                result[mb_page['title']] = False
+                # Redis fun
+                print(f"  <<< Caching {mb_page['title']} as a redlink (4)")
+                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=4)
+            else:
+                # If it's a redirect, then check it later
                 redirects.append(mb_page['title'])
-                # print("redirect:", mb_page['title'])
+                # print(f"  ==  Adding {mb_page['title']} to redirect list")
+                # Redis fun
+                # print(f"  <<< Caching {mb_page['title']} as a redirect (3)")
+                # r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=3)
+        # if mb_page['title'] == "Наволок":
+            # print(mb_page)
+            # print(is_disambig)
+            # print(result)
+            # sys.exit(5)
+                
+    # If there are no redirects, then just return disambig status for pages
     if not len(redirects):
         # print("no redirects to check,", redirects)
         return result,[]
+        
+    # If there are redirects, then check them
     print("Invoke redirect checker for", len(redirects), "pages")
     # Resolve redirects
     redirect_targets = []
@@ -427,10 +619,13 @@ def get_disambigs(dis_pages):
         'titles': '|'.join(redirects),
         'format': "json"
     }
+    ##print(REQUEST_PARAMS)
     response2 = session.get(url=URL, params=REQUEST_PARAMS)
     if not "redirects" in response2.json()['query']:
         print("Cannot find redirects!")
         print(response2.json()['query'])
+    ##print("Resolving redirects:")
+    ##print(response2.json()['query']['redirects'])
     for redirect in response2.json()['query']['redirects']:
         try:
             rd = redirect['from']
@@ -444,6 +639,7 @@ def get_disambigs(dis_pages):
             print("^^^^^^ Skipping this, go to next redir.")
             exit(2)
             continue
+        # TODO apply Redis here
         redirect_targets.append(redirect_target)
         redirect_pair = {
             'from': rd,
@@ -457,28 +653,36 @@ def get_disambigs(dis_pages):
             #print("^^^^^^ That was a bad redirect! ^^^^^^^")
             long_redirects.append(rd)
             #print("Now long redirs is", long_redirects)
-    # PARAMS_3 = {
-        # 'action': "query",
-        # 'formatversion':   2,
-        # 'prop':   "categories",
-        # 'cllimit': 1000,
-        # 'titles': '|'.join(redirect_targets),
-        # 'format': "json"
-    # }
-    # response = session.get(url=URL, params=PARAMS_3)
-    # #print(mb_page)
-    # for mb_page in response.json()['query']['pages']:
+
     for mb_page in get_wp_categories(redirect_targets):
         #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
             is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
+            # Redis fun
+            if is_disambig:
+                print(f"  <<< Caching {mb_page['title']} as a disambig (2)")
+                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
+            else:
+                # print(f"  <<< Caching {mb_page['title']} as an ordinary page (1)")
+                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
         else:
             print("------------skipping faulty page", mb_page['title'])
             is_disambig = False
         result[mb_page['title']] = is_disambig
+        ##print(f"now lets find {mb_page['title']} in redirect_pairs")
+        ##print(redirect_pairs)
+        
         for pair in redirect_pairs:
             if pair['to'] == mb_page['title']:
                 result[pair['from']] = is_disambig
+                ##print(f"We shoudld AFTER-REDIR overwrite {pair['from']} to {is_disambig}")
+                # Redis fun
+                if is_disambig:
+                    print(f"  <<< AFTER-REDIR: Caching {pair['from']} as a disambig (2)")
+                    r.setex(f"page:status:{pair['from']}", datetime.timedelta(hours=ttl_hours), value=2)
+                else:
+                    # print(f"  <<< AFTER-REDIR: Caching {pair['from']} as an ordinary page (1)")
+                    r.setex(f"page:status:{pair['from']}", datetime.timedelta(hours=ttl_hours), value=1)
     return result,long_redirects
 
 def parse_check_template(template_text):
