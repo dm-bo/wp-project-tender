@@ -208,17 +208,6 @@ for post_results_page in result_pages:
         nowiki=True)
     )
 
-    # print("Engaging check LinksInText")
-    # checks.append(Check(
-        # name="LinksInText",
-        # title="Ссылки в тексте",
-        # descr="Не следует вставлять внешние ссылки прямо в текст. Обычно они размещаются в " + \
-            # "сносках, разделе \"Ссылки\" и других подобающих местах.",
-        # pages=check_wp_links_in_text(viet_pages_content),
-        # total=len(viet_pages),
-        # nowiki=True)
-    # )
-
     print("Engaging check NoLinksInLinks and beyond")
     checks.append(Check(
         name="NoLinksInLinks",
@@ -376,6 +365,17 @@ for post_results_page in result_pages:
         total=len(viet_pages))
     )
 
+    print("Engaging check LinksInText")
+    checks.append(Check(
+        name="LinksInText",
+        title="Ссылки в тексте",
+        descr="Не следует вставлять внешние ссылки прямо в текст. Обычно они размещаются в " + \
+            "сносках, разделе \"Ссылки\" и других подобающих местах.",
+        pages=check_wp_links_in_text(viet_pages_content),
+        total=len(viet_pages),
+        nowiki=True)
+    )
+
     # Template checks (can be looped later)
 
     if checks_enabled["CiteDecorations"]:
@@ -515,7 +515,7 @@ for post_results_page in result_pages:
     checks.append(Check(
         name="Empty",
         title="Очень короткие статьи",
-        descr="Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code>.",
+        descr="Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code> или {{tl|дописать}}.",
         pages=check_wp_pages_empty(viet_pages_content),
         total=len(viet_pages))
     )
@@ -790,7 +790,7 @@ for post_results_page in result_pages:
         print(f"... wrote {output_file}")
 
     # Web
-
+    # exit(0)
     if set_wp_page_text(session, post_results_page, content, summary):
         print("Updated.")
     else:

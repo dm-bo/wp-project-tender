@@ -141,6 +141,7 @@ def check_wp_pages_empty(viet_pages_content):
     result = []
     for page in viet_pages_content:
         mc = re.findall(r"{{rq\|[^\}]{0,30}empty[\|}]", page['content'])
+        mc += re.findall(r"{{дописать[\|}]", page['content'])
         if mc:
             result.append(ProblemPage(title=page['title'],counter=len(mc)))
     return result
