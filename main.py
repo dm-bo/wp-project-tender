@@ -13,7 +13,7 @@ from jinja2 import Environment, FileSystemLoader
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_disambigs, get_wp_pages_by_category_recurse
-from wp_functions_aux import parse_check_template
+from wp_functions_aux import parse_check_template, normalize_link
 from wp_functions_check import *
 # import update_list
 
@@ -45,7 +45,6 @@ class Check():
         return f'{self.name} ({self.counter} pages found)'
 
 moment_start = datetime.datetime.now()
-dis_or_not = {}
 session = get_wp_authenticated_session(wp_login, wp_passw)
 
 # Script config
@@ -692,7 +691,6 @@ for post_results_page in result_pages:
     )
 
     ### Search for disambigs ###
-    # TODO rewrite this
     if checks_enabled["Disambigs"]:
         i = 0
         batch_size = 20
@@ -704,9 +702,11 @@ for post_results_page in result_pages:
         da_total,da_cache_hits = 0,0
         for il in internal_links:
             da_total += 1
-            i = i + 1
-            il.link = il.link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
-            il.link = re.sub("#.*$","", il.link)
+            i += 1
+            il.link = normalize_link(il.link)
+            if il.link == "":
+                continue
+            # TODO replace with page:isdisambig:
             red_cached = red_con.get(f"page:status:{il.link}")
             if il.link == "":
                 pass
@@ -718,34 +718,26 @@ for post_results_page in result_pages:
             # elif red_cached == 3:
                 # print(f"{red_cached} is a redirect")
                 # redirects.append(mb_page['title'])
-            elif not il.link in dis_or_not:
+            else:
                 batch_unknown.append(il)
-            elif dis_or_not[il.link]:
-                print(f"NOTICE: {dis_or_not[il.link]} in dis_or_not, but not in Redis cache!")
-                disambigs.append(il)
             #if len(batch_unknown) > batch_size:
             if sum(len(s.link) for s in batch_unknown) > BATCH_LENGTH or \
               len(batch_unknown) >= BATCH_HARD_LIMIT:
                 print("Checker invoked", i, "/", len(internal_links),
                     "( len", sum(len(s.link) for s in batch_unknown),
                     ", items", len(batch_unknown), ")")
-                dis_or_not_append,long_redirects_append = get_disambigs(batch_unknown,red_con)
-                dis_or_not.update(dis_or_not_append)
-                long_redirects = long_redirects + long_redirects_append
-                long_redirects = long_redirects + long_redirects_append
+                dis_or_not_append = get_disambigs(batch_unknown,red_con)
+                # long_redirects = long_redirects + long_redirects_append
                 for ib in batch_unknown:
-                    ib2 = ib.link[0].upper() + ib.link[1:]
-                    ib2 = ib2.replace(" "," ").replace("  "," ").replace("_"," ").strip()
-                    ib2 = re.sub("#.*$","", ib2)
-                    if not ib2 in dis_or_not:
-                        cannot_check.append(ib)
-                    elif dis_or_not[ib2]:
+                    ib2 = normalize_link(ib.link)
+                    if ib2 in dis_or_not_append:
                         disambigs.append(ib)
                 batch_unknown = []
-            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs \
-                checked ({da_total} of {len(internal_links)});", \
-                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, \
-                {round(100*da_cache_hits/len(internal_links), 3)}% in total")
+            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs",
+                f"checked ({da_total} of {len(internal_links)});", \
+                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, "
+                f"{round(100*da_cache_hits/len(internal_links), 3)}% in total")
+        # It becomes ordered by tha magic
         disambig_ordered = {}
         for da in disambigs:
             if not da.page in disambig_ordered:
@@ -767,50 +759,6 @@ for post_results_page in result_pages:
             descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки " +
                 "необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
             pages=disambig_problems,
-            total=len(viet_pages))
-        )
-
-    if False or checks_enabled["UglyRedirects"]:
-        # side-product
-        long_redirects_set = set(long_redirects)
-        long_redirects = list(long_redirects_set)
-        # TODO construct Problems (now only the page list)
-        # checks.append(Check(
-            # name="UncheckableLinks",
-            # title="Непроверяемые внутренние ссылки",
-            # descr="Внутренние ссылки, для которых не получилось определить, редирерект это " + \
-              # "или нет. Возможно, с ними что-то не так; надо проверить.",
-            # pages=cannot_check,
-            # total=len(internal_links))
-        # )
-        # print("Long redirects are", long_redirects)
-        long_redirecting_pages = []
-        for il in internal_links:
-            if il.link in long_redirects:
-                long_redirecting_pages.append(il)
-        # print("Long redirects pages are", long_redirecting_pages)
-        # TODO rewrire as function (for 3 calls)
-        long_redirects_ordered = {}
-        for lr in long_redirecting_pages:
-            if not lr.page in long_redirects_ordered:
-                long_redirects_ordered[lr.page] = {}
-            if not lr.link in long_redirects_ordered[lr.page]:
-                long_redirects_ordered[lr.page][lr.link] = True
-        # print("Long redirects ordered are", long_redirects_ordered)
-        long_redirects_problems = []
-        for i_p, key_p in enumerate(long_redirects_ordered):
-            samples = []
-            for i_l, key_l in enumerate(long_redirects_ordered[key_p]):
-                samples.append(f'[[{key_l}]]')
-            long_redirects_problems.append(ProblemPage(title=key_p, \
-              samples=samples))
-        # print("Long redirects problems are", long_redirects_problems)
-        checks.append(Check(
-            name="UglyRedirects",
-            title="Громоздкие редиректы",
-            descr="Длинные, некрасивые, избыточные редиректы. Такой редирект можно заменить " + \
-              "прямой ссылкой на саму статью.<!-- Побочный продукт от поиска дизамбигов -->",
-            pages=long_redirects_problems,
             total=len(viet_pages))
         )
 
@@ -849,5 +797,4 @@ for post_results_page in result_pages:
         print("Cannot update page.")
 
     ### Stats ###
-    print("Checked", len(dis_or_not), "of", len(internal_links), "internal links.")
     print(datetime.datetime.now()-moment_start)
