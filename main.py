@@ -77,6 +77,7 @@ for post_results_page in result_pages:
         "CiteDecorations": True,
         "PoorDates": True,
         "Communes": False,
+        "Images": False,
         "Experimental": False,
         "Disambigs": False,
         "UglyRedirects": False
@@ -641,6 +642,16 @@ for post_results_page in result_pages:
             total=len(viet_pages))
         )
 
+    if checks_enabled["Images"]:
+        checks.append(Check(
+            name="Images",
+            title="Нужно добавить изображение",
+            descr="В статье стоит запрос изображения, или статья иным образом включена в одну из" +
+                "категорий \"Категория:Википедия:Статьи без изображений*\". ",
+            pages=check_wp_images(viet_pages_content),
+            total=len(viet_pages))
+        )
+        
     ### Overwikified dates ###
     # TODO rewrite this
     # пока на похер работает как работает

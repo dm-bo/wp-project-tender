@@ -400,4 +400,12 @@ def check_wp_wkimedia_links(viet_pages_content):
         #         wikivoyage, wikidata, species.wikimedia.org, meta.wikimedia.org, mediawiki.org
     return result
 
+def check_wp_images(viet_pages_content):
+    result = []
+    for page in viet_pages_content:
+        for cat in page["categories"]:
+            if re.search(r"Википедия:Статьи без изображений", cat):
+                result += page['title']
+    return result 
+
 ### Single-Page Checks ###

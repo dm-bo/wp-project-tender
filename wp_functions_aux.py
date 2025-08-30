@@ -22,7 +22,7 @@ def get_wp_page_content(params):
         i += 1
         session = requests.Session()
         try:
-            response = session.get(url=script_config["api_url"], params=params)
+            response = session.get(url=script_config["api_url"], params=params, headers=script_config["headers"])
         except:
             print(f"Error getting page ({i}), waiting {sleep_timeout} seconds...")
             print("..........")
@@ -45,7 +45,7 @@ def get_wp_articles_content(titles):
     REQ_PARAMS = {
         "action": "query",
         "format": "json",
-        "prop": "flagged|revisions",
+        "prop": "flagged|revisions|categories",
         "formatversion": 2,
         "rvprop": "content",
         "rvslots": "*",
@@ -77,8 +77,20 @@ def get_wp_pages_by_template(template, namespace):
     have_data_to_get = True
     RUN_PARAMS = INIT_PARAMS
     while have_data_to_get:
-        response = session.get(url=script_config["api_url"], params=RUN_PARAMS)
-        pages_dict = response.json()['query']["pages"]
+        response = session.get(url=script_config["api_url"], params=RUN_PARAMS, headers=script_config["headers"])
+        try:
+            pages_dict = response.json()['query']["pages"]
+        except:
+            # FIXME вынести в функцию
+            print(response)
+            print("Статус-код:", response.status_code)
+            print("Заголовки:", response.headers)
+            print("Тело ответа:", response.text)
+            print("URL:", response.url)
+            print("Cookies:", response.cookies)
+            print("История редиректов:", response.history)
+            print("Cannot get session!")
+            exit(4)
         transcluded_objs = pages_dict[list(pages_dict)[0]]['transcludedin']
         # res = [ sub['gfg'] for sub in test_list ]
         for ti in transcluded_objs:
@@ -116,8 +128,8 @@ def get_wp_pages_by_category(category, namespace=1):
               page['ns'] == 14:
                 result.append(page['title'].replace('Обсуждение:',''))
         if 'continue' in response.json().keys():
-            print("Let's continue!")
-            print(response.json()['continue'])
+            print(f"Let's continue getting by category {category}! {len(result)} so far.")
+            # print(response.json()['continue'])
             params_1 = dict(list(PARAMS_0.items()) + list(response.json()['continue'].items()))
             have_data_to_get = True
         else:
@@ -169,9 +181,15 @@ def parse_page_data(page_data,pages_content,pages_old_pat,pages_not_pat):
     else:
         pass
     # print(page)
+    categories = []
+    # try:
+    if "categories" in page_data:
+        for cat in page_data['categories']:
+            categories += cat["title"].replace('Категория:', '')
     next_page =  {
         "title": page_data['title'],
-        "content": page_data['revisions'][0]['slots']['main']['content']
+        "content": page_data['revisions'][0]['slots']['main']['content'],
+        "categories": categories
     }
     pages_content.append(next_page)
     return pages_content,pages_old_pat,pages_not_pat
@@ -232,9 +250,9 @@ def get_wp_pages_content(viet_pages,r,limit=100000):
                         viet_pages_not_patrolled
                     )
         if j % 10 == 0 or j == 1 or j == len(viet_pages_content):
-            print("Pages processed so far:", j, f"of {len(viet_pages)}",
+            print("Pages processed so far:", j, f"of {len(viet_pages)},",
                 f"web requests: {j_web},",
-                f"cache hits {j_red} ({round(100*j_red/max(len(viet_pages_content),1),1)}%",
+                f"cache hits: {j_red} ({round(100*j_red/max(len(viet_pages_content),1),1)}%",
                 f"so far, {round(100*j_red/len(viet_pages),1)}% total)")
     viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
     viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
@@ -262,25 +280,13 @@ def get_wp_internal_links(viet_pages_content):
     links_ololo_arr = []
     i = 0
     for page in viet_pages_content:
-        #print("matching", page['title'])
         i += 1
-        # TODO stuff about eastern name is skipped for now
-        # if ($removeEasternNames){
-            # # performange issue here
-            # $content = $page.content -replace "{{Восточноазиатское имя[^}]{1,20}}}"
-        # } else {
-            # $content = $page.content
-        # }
         mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page['content'])
         if mc:
-            #print("Matched")
             for m in mc:
                 links_ololo.append(OloloLink(m, page['title']))
                 links_ololo_arr.append({'link': m, 'page': page['title']})
-        #if divmod(i, 10)[1] == 0:
-        #    print("Extracting wikilinks:", i, "/", len(viet_pages_content), "pages processed")
     return links_ololo
-    #return links_Ololo_arr
 
 def get_wp_page_sections(content):
     """
@@ -322,7 +328,7 @@ def get_wp_authentication_status(session):
     }
     if not hasattr(session, 'get'):
         return False
-    response = session.get(url=script_config["api_url"], params=PARAMS_0)
+    response = session.get(url=script_config["api_url"], params=PARAMS_0, headers=script_config["headers"])
     #print(response.json()['query']['userinfo'])
     if response.json()['query']['userinfo']['id']:
         return True
@@ -339,10 +345,20 @@ def get_wp_authenticated_session(login, password):
         'type':   "login",
         'format': "json"
     }
-    response = session.get(url=script_config["api_url"], params=PARAMS_1)
+    response = session.get(url=script_config["api_url"], params=PARAMS_1, headers=script_config["headers"])
     # print(response.json()['query']['tokens'])
-    login_token = response.json()['query']['tokens']['logintoken']
-
+    try:
+        login_token = response.json()['query']['tokens']['logintoken']
+    except:
+        print(response)
+        print("Статус-код:", response.status_code)
+        print("Заголовки:", response.headers)
+        print("Тело ответа:", response.text)
+        print("URL:", response.url)
+        print("Cookies:", response.cookies)
+        print("История редиректов:", response.history)
+        print("Cannot get session!")
+        exit(4)
     PARAMS_2 = {
         'action':     "login",
         'lgname':     login,
@@ -351,7 +367,7 @@ def get_wp_authenticated_session(login, password):
         'format':     "json"
     }
 
-    response = session.post(url=script_config["api_url"], data=PARAMS_2)
+    response = session.post(url=script_config["api_url"], data=PARAMS_2, headers=script_config["headers"])
     # print(response.json())
     if get_wp_authentication_status(session):
         return session
@@ -369,7 +385,7 @@ def set_wp_page_text(session, title, text, summary):
         "meta":   "tokens",
         "format": "json"
     }
-    response = session.get(url=script_config["api_url"], params=PARAMS_4)
+    response = session.get(url=script_config["api_url"], params=PARAMS_4, headers=script_config["headers"])
     csrf_token = response.json()['query']['tokens']['csrftoken']
 
     # POST request to edit a page
@@ -383,7 +399,7 @@ def set_wp_page_text(session, title, text, summary):
         "format":   "json"
     }
 
-    response = session.post(url=script_config["api_url"], data=PARAMS_5)
+    response = session.post(url=script_config["api_url"], data=PARAMS_5, headers=script_config["headers"])
     print(response.json())
     if response.json()['edit']['result'] == "Success":
         return True
@@ -414,18 +430,8 @@ def get_wp_categories(pagenames):
     params_1 = PARAMS_0
     while have_data_to_get:
         cat_len_tot = 0
-        #time.sleep(3)
         response = get_wp_page_content(params_1)
-        try:
-            pages_dict = response.json()['query']["pages"]
-        except:
-            print("OMG! OMG!")
-            print(params_1['titles'], "len:", len(params_1['titles']))
-            print(response)
-            print(type(response))
-            print(response.json())
-        #first_set = list(pages_dict)[0]
-        #print(pages_dict)
+        pages_dict = response.json()['query']["pages"]
         for page in pages_dict:
             # print("===", page['title'], "===")
             if not page['title'] in result_dict:
@@ -492,6 +498,20 @@ def get_wp_categories(pagenames):
 
 def get_disambigs_targets(redirects):
     print("Invoke redirect checker for", len(redirects), "pages")
+    # Ensure we have a list to iterate on
+    redirects = [redirects] if isinstance(redirects, str) else redirects
+    # COSTYLE
+    # TODO function "clean redirects"
+    redirects1 = []
+    redirects_debug = ""
+    for redir in redirects:
+        redir1 = redir.replace("{{nbsp}}", " ").replace("<includeonly>", "").replace("</includeonly>", "")
+        redirects_debug += f"cleaning {redir} to {redir1}\n"
+        if not re.search(r"{{", redir1) and \
+          not re.search(r"<", redir1):
+            redirects1.append(redir1)
+        else:
+            print(f"Skipping redir target {redir1}!")
     # Resolve redirects
     redirect_pairs = []
     session = requests.Session()
@@ -499,16 +519,28 @@ def get_disambigs_targets(redirects):
         'action': "query",
         'formatversion':   2,
         'redirects': 1,
-        'titles': '|'.join(redirects),
+        'titles': '|'.join(redirects1),
         'format': "json"
     }
-    response2 = session.get(url=script_config["api_url"], params=request_params)
-    if not "redirects" in response2.json()['query']:
-        print("Cannot find redirects!")
-        print(response2.json()['query'])
+    response2 = session.get(url=script_config["api_url"], params=request_params, headers=script_config["headers"])
+    if "query" in response2.json():
+        if not "redirects" in response2.json()['query']:
+            print("Cannot find redirects!")
+            print(response2.json()['query'])
+    else:
+        print("Cannot find adequate response!")
+        print(redirects)
+        print(redirects_debug)
+        print(response2.json())
     ##print("Resolving redirects:")
     ##print(response2.json()['query']['redirects'])
-    for redirect in response2.json()['query']['redirects']:
+    try:
+        responce2_redirects = response2.json()['query']['redirects']
+    except:
+        print("Failed with params:")
+        print(request_params)
+        exit(77)
+    for redirect in responce2_redirects:
         try:
             rd = redirect['from']
             redirect_target = redirect['to']
