@@ -10,6 +10,18 @@ from config import get_tender_config
 
 script_config = get_tender_config()
 
+def find_redirect_in_content(content):
+    """
+    Searches something like
+    #Перенаправление [[Ленин, Владимир Ильич]]
+    in given text. If no, returns "" (empty string)
+    """
+    pattern = re.compile(r"#перенаправление\s*\[\[(.*?)\]\]", re.IGNORECASE)
+    m = pattern.search(content)
+    if m:
+        return m.group(1)
+    return ""
+
 def get_wp_page_content(params):
     """
     Returns raw data of bunch of pages.
@@ -30,14 +42,49 @@ def get_wp_page_content(params):
             continue
         if response.status_code == 200:
             return response
+        if response.status_code == 414:
+            print(f"URI too long! ({len(params["titles"])})")
+            print(params["titles"])
+            sys.exit(414)
         print(f"Got responce {response.status_code}, waiting {sleep_timeout} secs and retry...")
         print("..........")
         time.sleep(sleep_timeout)
     return False
 
-def get_wp_articles_content(titles):
+def structure_page_data(page_data):
+    flagged_date = "1970-01-01"
+    if not 'flagged' in page_data:
+        flagged = "never"
+    elif 'pending_since' in page_data['flagged']:
+        #flagged_date = dateutil.parser.isoparse(page_data['flagged']['pending_since'])
+        flagged_date = page_data['flagged']['pending_since']
+        flagged = "old"    
+    else:
+        flagged = "current"    
+    content = ""
+    if "revisions" in page_data:
+        content = page_data['revisions'][0]['slots']['main']['content']
+    categories = []
+    if "categories" in page_data:
+        for cat in page_data["categories"]:
+            categories.append(cat["title"])
+    missing = "missing" in page_data
+    redirects_to = find_redirect_in_content(content)
+    return {
+      "title": page_data["title"],
+      "content": content,
+      "categories": categories,
+      "flagged": flagged,
+      "flagged_date": flagged_date,
+      "redirects_to": redirects_to,
+      "missing": missing
+    }
+
+def get_wp_articles_content(titles,r):
     """
-    Returns structured data of bunch of articles.
+    Returns structured data of bunch of articles from web.
+    Writes structured JSON to Redis cache.
+    Knows about missng pages and flagged revisions (not yet).
     Level 1 wrapper for get_wp_page_content.
     Lays between get_wp_pages_content and get_wp_page_content (!)
     """
@@ -51,15 +98,105 @@ def get_wp_articles_content(titles):
         "rvslots": "*",
         "titles": '|'.join(titles) #.replace("&","%26").replace("/","%2F")
     }
-    print(REQ_PARAMS['titles'])
+    # print(REQ_PARAMS['titles'])
     response = get_wp_page_content(REQ_PARAMS)
     try:
         paginas = response.json()['query']['pages']
     except:
         print(f"!!! Can't get paginas from response! Params: {REQ_PARAMS}")
+        print(response)
         print(response.json())
         sys.exit(404)
-    return paginas
+    # Converting to own-structured JSON and cache it
+    structured_pages = []
+    for pagina in paginas:
+        structured_page = structure_page_data(pagina)
+        # TODO move to config
+        LEN_CACHE_NOTICE = 102400
+        if len(str(structured_page)) > LEN_CACHE_NOTICE:
+            #print(f"  <<< Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
+            print("<<<".ljust(12) + f"Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
+        r.setex(f"page:content:{structured_page['title']}",
+            datetime.timedelta(hours=script_config["cache_content_ttl"]),
+            value=str(structured_page)
+            )
+        structured_pages.append(structured_page)
+    #return paginas
+    return structured_pages
+
+def get_wp_articles_content_cached(titles,r):
+    """
+    Returns summarized pages (structured JSON) both from cache and web requests.
+    Deals with cache. Deals with batch size.
+    Level 1 wrapper for get_wp_articles_content. Level 2 wrapper for get_wp_page_content.
+    """
+    need_web_request = []
+    # just for statistics
+    j, j_red = 0,0
+    for title in titles:
+        j = j + 1
+        # double Redis requests but nobody cares
+        red_cached = r.get(f"page:content:{title}")
+        if not red_cached:
+            # print(f"Will request web content for {title}")
+            need_web_request.append(title)
+        elif re.search(r"Проект\:", title):
+            print(f"Will request web content for {title} (cache omitted)")
+            need_web_request.append(title)
+        else:
+            j_red = j_red + 1
+        print("web-cache".ljust(12) + "Pages processed so far:", j, f"of {len(titles)},",
+            f"web requests planned: {len(need_web_request)},",
+            f"cache hits: {j_red} ({round(100*j_red/max(j,1),1)}%",
+            f"so far, {round(100*j_red/len(titles),1)}% total)")
+    API_BATCH_SIZE = 50
+    URI_LENGTH_REDLINE = 1400
+    i = 0
+    batch_titles = []
+    for title in need_web_request:
+        batch_titles.append(title)
+        i = i + 1
+        if i == len(need_web_request) or \
+          len(batch_titles) == API_BATCH_SIZE or \
+          len('|'.join(batch_titles)) > URI_LENGTH_REDLINE:
+            # pages goes to Redis cache here
+            dont_need_this_var = get_wp_articles_content(batch_titles,r)
+            print(f"Page really requested: {i} of planned {len(need_web_request)} (batch {len(batch_titles)}, URI len {len('|'.join(batch_titles))})")
+            batch_titles = []
+    
+    # Now every page must be in cache, so we take everything from cache
+    result = []
+    for title in titles:
+        red_cached = r.get(f"page:content:{title}")
+        if red_cached:
+            #print()
+            #print(red_cached)
+            next_result = ast.literal_eval(red_cached)
+            # print(next_result["flagged_date"])
+            # print(type(next_result["flagged_date"]))
+            next_result["flagged_date"] = datetime.datetime.fromisoformat(next_result["flagged_date"])
+            # print("Converted:")
+            # print(next_result["flagged_date"])
+            # print(type(next_result["flagged_date"]))
+            # print() 
+            result.append(next_result)
+        else:
+            print(f"OMG! OMG! Cunt get cached content for {title}!")
+    # Last man's check
+    if not len(titles) == len(result):
+        print(f"FATAL: argument length ({len(titles)}) doesn't match with result length ({len(result)}) !")
+    return result
+
+def print_http_response(response):
+    print(response)
+    print("Статус-код:", response.status_code)
+    print("Заголовки:", response.headers)
+    print("Тело ответа:", response.text)
+    print("URL:", response.url)
+    print("Cookies:", response.cookies)
+    print("История редиректов:", response.history)
+    print("Cannot get response!")
+    return None
 
 # gets template name
 # returns array of page names
@@ -81,15 +218,7 @@ def get_wp_pages_by_template(template, namespace):
         try:
             pages_dict = response.json()['query']["pages"]
         except:
-            # FIXME вынести в функцию
-            print(response)
-            print("Статус-код:", response.status_code)
-            print("Заголовки:", response.headers)
-            print("Тело ответа:", response.text)
-            print("URL:", response.url)
-            print("Cookies:", response.cookies)
-            print("История редиректов:", response.history)
-            print("Cannot get session!")
+            print_http_response(response)
             exit(4)
         transcluded_objs = pages_dict[list(pages_dict)[0]]['transcludedin']
         # res = [ sub['gfg'] for sub in test_list ]
@@ -168,101 +297,37 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
         f"{len(cats)} categories left.")
     return pages
 
-# TODO no need to append array here
-def parse_page_data(page_data,pages_content,pages_old_pat,pages_not_pat):
-    if not 'flagged' in page_data.keys():
-        pages_not_pat.append(page_data['title'])
-    elif 'pending_since' in page_data['flagged'].keys():
-        next_old_patrolled = {
-            "title": page_data['title'],
-            "date": dateutil.parser.isoparse(page_data['flagged']['pending_since'])
-        }
-        pages_old_pat.append(next_old_patrolled)
-    else:
-        pass
-    # print(page)
-    categories = []
-    # try:
-    if "categories" in page_data:
-        for cat in page_data['categories']:
-            categories += cat["title"].replace('Категория:', '')
-    next_page =  {
-        "title": page_data['title'],
-        "content": page_data['revisions'][0]['slots']['main']['content'],
-        "categories": categories
-    }
-    pages_content.append(next_page)
-    return pages_content,pages_old_pat,pages_not_pat
-
 def get_wp_pages_content(viet_pages,r,limit=100000):
     batch_size = 10
     viet_pages_content = []
     viet_pages_not_patrolled = []
     viet_pages_old_patrolled = []
 
-    # internal list of pages to get from WP
-    next_batch = []
-    # some counters
-    j, j_web, j_red = 0, 0, 0
-    for vp in viet_pages:
-        j += 1
-        #paginas = []
-        if re.search(r"Проект\:", vp):
-            red_cached = False
+    paginas = get_wp_articles_content_cached(viet_pages,r)
+    for page in paginas:
+        viet_pages_content.append({
+            "title": page['title'],
+            "content": page['content'],
+            "categories": page['categories']
+        })
+        if page["flagged"] == "never":
+            #print(f"{page["title"]} never")
+            viet_pages_not_patrolled.append(page['title'])
+        elif page["flagged"] == "current":
+            #print(f"{page["title"]} current, no do")
+            #
+            pass
         else:
-            red_cached = r.get(f"page:content:{vp}")
-        if red_cached:
-            # if have Redis cache
-            j_red += 1
-            pagina1 = ast.literal_eval(red_cached)
-            viet_pages_content, viet_pages_old_patrolled, viet_pages_not_patrolled = \
-                parse_page_data(
-                    pagina1,
-                    viet_pages_content,
-                    viet_pages_old_patrolled,
-                    viet_pages_not_patrolled
-                )
-        else:
-            # if no then  do business with HTTP
-            j_web += 1
-            next_batch.append(vp)
-        if j > limit:
-            # break if a huge limit is reached (millions)
-            break
-        if len(next_batch) == batch_size or (j == len(viet_pages) and len(next_batch) > 0):
-            # it's time to do an HTTP request, so do it
-            paginas = get_wp_articles_content(next_batch)
-            next_batch = []
-            for page in paginas:
-                # cache it baby
-                if len(str(page)) > 102400:
-                    print(f"  <<< Going to cache data sized {round(len(str(page))/1024,0)}k")
-                r.setex(f"page:content:{page['title']}",
-                    datetime.timedelta(hours=script_config["cache_content_ttl"]),
-                    value=str(page)
-                    )
-                # add the pages we download
-                viet_pages_content, viet_pages_old_patrolled, viet_pages_not_patrolled = \
-                    parse_page_data(
-                        page,
-                        viet_pages_content,
-                        viet_pages_old_patrolled,
-                        viet_pages_not_patrolled
-                    )
-        if j % 10 == 0 or j == 1 or j == len(viet_pages_content):
-            print("Pages processed so far:", j, f"of {len(viet_pages)},",
-                f"web requests: {j_web},",
-                f"cache hits: {j_red} ({round(100*j_red/max(len(viet_pages_content),1),1)}%",
-                f"so far, {round(100*j_red/len(viet_pages),1)}% total)")
+            #print(f"{page["title"]} old, numbah ten")
+            viet_pages_old_patrolled.append({
+                "title": page['title'],
+                "date": page["flagged_date"]
+            })
+                
+    # FIXME
     viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
     viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
     viet_pages_old_patrolled = sorted(viet_pages_old_patrolled, key=lambda d: d['date'])
-    if not j_red + j_web == j:
-        print("CHECKSUM TILT!")
-        exit(61)
-    if not j_red + j_web == len(viet_pages_content):
-        print("CHECKSUM TILT type 2!")
-        exit(62)
     return viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled
 
 class OloloLink():
@@ -562,6 +627,20 @@ def get_disambigs_targets(redirects):
             # #print("Now long redirs is", long_redirects)
     return redirect_pairs
 
+def get_disambigs2(dis_pages,r):
+    # Three-step check.
+    # Every page is requested 3 times from Redis, but IDK
+    # Step 1. Dump everything to cache.
+    
+    # Step 2. Search for redirects, dump redirect targets to cache
+    
+    # Step 3. Search for disambigs.    
+    # Now every page must be in cache, so we take everything from cache
+    result = []
+    for d_page in dis_pages:
+        red_cached = r.get(f"page:content:{title}")
+    return None
+
 def get_disambigs(dis_pages,r):
     """
     Gets a list of page names
@@ -608,14 +687,8 @@ def get_disambigs(dis_pages,r):
 
     # Get target of link: ordinary page, redirect, or redlink
     for mb_page in get_wp_categories(dis_page_names):
-        # print(f"checkin {mb_page['title']} ... ===")
-        # if mb_page['title'] == "Ли Тхай То":
-            # print(mb_page)
-        #if "categories" in mb_page.keys():
         if len(mb_page["categories"]):
             is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
-            # moved under disambig-only condition
-            #result[mb_page['title']] = is_disambig
             # Redis fun
             if is_disambig:
                 # print(f"  <<< Caching {mb_page['title']} as a disambig (2)")

@@ -17,7 +17,7 @@ from wp_functions_aux import parse_check_template, normalize_link
 from wp_functions_check import *
 # import update_list
 
-from wp_auth_data import *
+from wp_auth_data import get_auth_data
 from config import get_redis_client, get_tender_config
 
 # TODO check Template:Чистить| (problem)
@@ -45,7 +45,8 @@ class Check():
         return f'{self.name} ({self.counter} pages found)'
 
 moment_start = datetime.datetime.now()
-session = get_wp_authenticated_session(wp_login, wp_passw)
+auth_data = get_auth_data()
+session = get_wp_authenticated_session(auth_data["wp_login"], auth_data["wp_passw"])
 
 # Script config
 script_config = get_tender_config()
@@ -70,8 +71,6 @@ for post_results_page in result_pages:
     exclude_pages = []
     # prologue = ""
     epilogue = ""
-    # FIXME this limit doesn't work (see SPb category)
-    pages_limit = 50000
     summary = "плановое обновление данных"
     checks_enabled = {
         "CiteDecorations": True,
@@ -91,15 +90,14 @@ for post_results_page in result_pages:
     cannot_check = []
 
     # Checking that result page is not too fresh
-    result_content = get_wp_pages_content([post_results_page],red_con)
+    # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
+    result_content = get_wp_articles_content_cached([post_results_page],red_con)
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
-        result_content[0][0]['content'])
+        result_content[0]['content'])
     template_options = ""
     if mc1:
         check_template = parse_check_template(mc1[0], post_results_page)
         print(check_template)
-        # check_template["timestamp_date"]
-        # check_template["overdated_threshold"]
         if not check_template["old_enough"]:
             print("Not old enough, skipping")
             continue
@@ -143,8 +141,11 @@ for post_results_page in result_pages:
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
         if not check_template['except_pages'] == '':
-            excludes_content = get_wp_pages_content([check_template['except_pages']],red_con)
-            exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
+            # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
+            #excludes_content = get_wp_pages_content([check_template['except_pages']],red_con)
+            excludes_content = get_wp_articles_content_cached([check_template['except_pages']],red_con)
+            #exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
+            exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0]['content'])
     else:
         exclude_pages = []
     print("exclude_pages", exclude_pages)
@@ -181,7 +182,7 @@ for post_results_page in result_pages:
     ### Patrolling ####
 
     viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled = \
-        get_wp_pages_content(viet_pages=viet_pages,r=red_con,limit=pages_limit)
+        get_wp_pages_content(viet_pages=viet_pages,r=red_con)
 
     #print("Total pages retrieved:", len(viet_pages_content), "of", len(viet_pages))
     #print("Not patrolled:", len(viet_pages_old_patrolled), "and", len(viet_pages_not_patrolled))
@@ -651,7 +652,7 @@ for post_results_page in result_pages:
             pages=check_wp_images(viet_pages_content),
             total=len(viet_pages))
         )
-        
+
     ### Overwikified dates ###
     # TODO rewrite this
     # пока на похер работает как работает
@@ -661,7 +662,12 @@ for post_results_page in result_pages:
     from itertools import groupby
     internal_links = get_wp_internal_links(viet_pages_content)
     date_links = []
-    rx_date = r"^[0-9]* (?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$"
+    #rx_date = r"^[0-9]* (?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$"
+    rx_date = (
+        r"^[0-9]* "
+        r"(?:января|февраля|марта|апреля|мая|июня|"
+        r"июля|августа|сентября|октября|ноября|декабря)$"
+    )
     rx_year = r"^[0-9]* год$"
     for link in internal_links:
         #print(link)
@@ -801,7 +807,7 @@ for post_results_page in result_pages:
         print(f"... wrote {output_file}")
 
     # Web
-    # exit(0)
+    #exit(0)
     if set_wp_page_text(session, post_results_page, content, summary):
         print("Updated.")
     else:

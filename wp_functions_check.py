@@ -2,6 +2,7 @@ import re
 
 from wp_functions_aux import get_wp_page_sections, get_date_format
 from wp_functions_aux import get_wp_pages_content, get_norefs_nolinks_content, get_justtext_content
+from wp_functions_aux import get_wp_articles_content_cached
 
 class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
@@ -207,9 +208,13 @@ def check_wp_links_in_text(viet_pages_content):
 
 def check_wp_no_cats(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'],r)
+    exclude_templates_raw = get_wp_articles_content_cached(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'],r)
     # searches for [[:Шаблон: or [[Шаблон: on the page
-    exclude_templates = re.findall(r"\[\[[\:]*Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
+    exclude_templates = re.findall(r"\[\[[\:]*Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0]['content'])
+    # print("Found templates:")
+    # print(exclude_templates)
+    # print(len(exclude_templates))
+    # print()
     for page in viet_pages_content:
         has_cats = False
         for t in exclude_templates:
@@ -224,8 +229,11 @@ def check_wp_no_cats(viet_pages_content,r):
 
 def check_wp_no_links_in_links(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
-    exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
+    # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
+    #exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
+    exclude_templates_raw = get_wp_articles_content_cached(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
+    #exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
+    exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0]['content'])
     for page in viet_pages_content:
         # nothing to do if there is no "Ссылки" section
         if not re.search(r"==[ ]*Ссылки[ ]*==", page['content']):
@@ -404,8 +412,10 @@ def check_wp_images(viet_pages_content):
     result = []
     for page in viet_pages_content:
         for cat in page["categories"]:
+            # if page["title"] == "ST25":
             if re.search(r"Википедия:Статьи без изображений", cat):
-                result += page['title']
+                #result += page['title']
+                result.append(ProblemPage(title=page['title']))
     return result 
 
 ### Single-Page Checks ###
