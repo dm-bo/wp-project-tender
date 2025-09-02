@@ -12,10 +12,13 @@ from jinja2 import Environment, FileSystemLoader
 
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
-from wp_functions_aux import get_disambigs, get_wp_pages_by_category_recurse
+from wp_functions_aux import get_wp_pages_by_category_recurse
 from wp_functions_aux import parse_check_template, normalize_link
+#
+from wp_functions_check import check_links_to_disambigs
 from wp_functions_check import *
 # import update_list
+
 
 from wp_auth_data import get_auth_data
 from config import get_redis_client, get_tender_config
@@ -90,7 +93,6 @@ for post_results_page in result_pages:
     cannot_check = []
 
     # Checking that result page is not too fresh
-    # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
     result_content = get_wp_articles_content_cached([post_results_page],red_con)
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
         result_content[0]['content'])
@@ -141,10 +143,7 @@ for post_results_page in result_pages:
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
         if not check_template['except_pages'] == '':
-            # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
-            #excludes_content = get_wp_pages_content([check_template['except_pages']],red_con)
             excludes_content = get_wp_articles_content_cached([check_template['except_pages']],red_con)
-            #exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0][0]['content'])
             exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0]['content'])
     else:
         exclude_pages = []
@@ -709,77 +708,14 @@ for post_results_page in result_pages:
 
     ### Search for disambigs ###
     if checks_enabled["Disambigs"]:
-        i = 0
-        batch_size = 20
-        # set by Wikipedia
-        BATCH_HARD_LIMIT = 50
-        BATCH_LENGTH = 1300
-        batch_unknown = []
-
-        da_total,da_cache_hits = 0,0
-        for il in internal_links:
-            da_total += 1
-            i += 1
-            il.link = normalize_link(il.link)
-            if il.link == "":
-                continue
-            # TODO replace with page:isdisambig:
-            red_cached = red_con.get(f"page:status:{il.link}")
-            if il.link == "":
-                pass
-            elif red_cached == "4" or red_cached == "1":
-                da_cache_hits += 1
-            elif red_cached == "2":
-                da_cache_hits += 1
-                disambigs.append(il)
-            # elif red_cached == 3:
-                # print(f"{red_cached} is a redirect")
-                # redirects.append(mb_page['title'])
-            else:
-                batch_unknown.append(il)
-            #if len(batch_unknown) > batch_size:
-            if sum(len(s.link) for s in batch_unknown) > BATCH_LENGTH or \
-              len(batch_unknown) >= BATCH_HARD_LIMIT:
-                print("Checker invoked", i, "/", len(internal_links),
-                    "( len", sum(len(s.link) for s in batch_unknown),
-                    ", items", len(batch_unknown), ")")
-                dis_or_not_append = get_disambigs(batch_unknown,red_con)
-                # long_redirects = long_redirects + long_redirects_append
-                for ib in batch_unknown:
-                    ib2 = normalize_link(ib.link)
-                    if ib2 in dis_or_not_append:
-                        disambigs.append(ib)
-                batch_unknown = []
-            print(f"{round(100*da_total/len(internal_links), 2)}% disambigs",
-                f"checked ({da_total} of {len(internal_links)});", \
-                f"cache hits: {round(100*da_cache_hits/da_total, 2)}% so far, "
-                f"{round(100*da_cache_hits/len(internal_links), 3)}% in total")
-        # It becomes ordered by tha magic
-        disambig_ordered = {}
-        for da in disambigs:
-            if not da.page in disambig_ordered:
-                disambig_ordered[da.page] = {}
-            if not da.link in disambig_ordered[da.page]:
-                disambig_ordered[da.page][da.link] = True
-            #disambig_ordered[da.page][da.link] = disambig_ordered[da.page][da.link] + 1
-        disambig_problems = []
-        for i_p, key_p in enumerate(disambig_ordered):
-            samples = []
-            for i_l, key_l in enumerate(disambig_ordered[key_p]):
-                samples.append(f'[[{key_l}]]')
-            disambig_problems.append(ProblemPage(title=key_p, \
-              samples=samples))
-        #print("creating check for", len(disambig_problems), "problems", disambig_problems)
         checks.append(Check(
             name="BadLinks",
             title="Ссылки на неоднозначности",
             descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки " +
                 "необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
-            pages=disambig_problems,
+            pages=check_links_to_disambigs(viet_pages_content,red_con),
             total=len(viet_pages))
         )
-
-    # End of checks
 
     ### Rendering ###
 

@@ -10,6 +10,16 @@ from config import get_tender_config
 
 script_config = get_tender_config()
 
+def normalize_link(link):
+    if link == "":
+        return ""
+    normalized_link = link[0].upper() + link[1:]
+    normalized_link = normalized_link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
+    normalized_link = re.sub("#.*$","", normalized_link)
+    # if not link == normalized_link:
+        # print(f"{link} normalized to {normalized_link}")
+    return normalized_link
+
 def find_redirect_in_content(content):
     """
     Searches something like
@@ -20,6 +30,10 @@ def find_redirect_in_content(content):
     m = pattern.search(content)
     if m:
         return m.group(1)
+    pattern2 = re.compile(r"#REDIRECT\s*\[\[(.*?)\]\]", re.IGNORECASE)
+    n = pattern2.search(content)
+    if n:
+        return n.group(1)
     return ""
 
 def get_wp_page_content(params):
@@ -124,7 +138,7 @@ def get_wp_articles_content(titles,r):
     #return paginas
     return structured_pages
 
-def get_wp_articles_content_cached(titles,r):
+def get_wp_articles_content_cached(titles,r,verbose=True):
     """
     Returns summarized pages (structured JSON) both from cache and web requests.
     Deals with cache. Deals with batch size.
@@ -135,39 +149,49 @@ def get_wp_articles_content_cached(titles,r):
     j, j_red = 0,0
     for title in titles:
         j = j + 1
+        n_title = normalize_link(title)
         # double Redis requests but nobody cares
-        red_cached = r.get(f"page:content:{title}")
+        red_cached = r.get(f"page:content:{n_title}")
         if not red_cached:
             # print(f"Will request web content for {title}")
-            need_web_request.append(title)
-        elif re.search(r"Проект\:", title):
-            print(f"Will request web content for {title} (cache omitted)")
-            need_web_request.append(title)
+            need_web_request.append(n_title)
+        elif re.search(r"Проект\:", n_title):
+            print(f"Will request web content for {n_title} (cache omitted)")
+            need_web_request.append(n_title)
         else:
             j_red = j_red + 1
-        print("web-cache".ljust(12) + "Pages processed so far:", j, f"of {len(titles)},",
-            f"web requests planned: {len(need_web_request)},",
-            f"cache hits: {j_red} ({round(100*j_red/max(j,1),1)}%",
-            f"so far, {round(100*j_red/len(titles),1)}% total)")
+        if verbose:
+            print("web-cache".ljust(12) + "Pages processed so far:", j, f"of {len(titles)},",
+                f"web requests planned: {len(need_web_request)},",
+                f"cache hits: {j_red} ({round(100*j_red/max(j,1),1)}%",
+                f"so far, {round(100*j_red/len(titles),1)}% total)")
     API_BATCH_SIZE = 50
     URI_LENGTH_REDLINE = 1400
     i = 0
     batch_titles = []
+    # print("so we have need_web_request:")
+    # print(need_web_request)
     for title in need_web_request:
-        batch_titles.append(title)
+        n_title = normalize_link(title)
+        batch_titles.append(n_title)
         i = i + 1
         if i == len(need_web_request) or \
           len(batch_titles) == API_BATCH_SIZE or \
           len('|'.join(batch_titles)) > URI_LENGTH_REDLINE:
             # pages goes to Redis cache here
+            # print("requesting get_wp_articles_content for")
+            # print(batch_titles)
             dont_need_this_var = get_wp_articles_content(batch_titles,r)
-            print(f"Page really requested: {i} of planned {len(need_web_request)} (batch {len(batch_titles)}, URI len {len('|'.join(batch_titles))})")
+            if verbose:
+                print("web-http".ljust(12) + f"Page really requested: {i} of planned {len(need_web_request)} (batch {len(batch_titles)}, URI len {len('|'.join(batch_titles))})")
             batch_titles = []
     
     # Now every page must be in cache, so we take everything from cache
+    # FIXME not reliable, we need dont_need_this_var
     result = []
     for title in titles:
-        red_cached = r.get(f"page:content:{title}")
+        normal_title = normalize_link(title)
+        red_cached = r.get(f"page:content:{normal_title}")
         if red_cached:
             #print()
             #print(red_cached)
@@ -181,7 +205,7 @@ def get_wp_articles_content_cached(titles,r):
             # print() 
             result.append(next_result)
         else:
-            print(f"OMG! OMG! Cunt get cached content for {title}!")
+            print(f"OMG! OMG! Cunt get cached content for {normal_title}!")
     # Last man's check
     if not len(titles) == len(result):
         print(f"FATAL: argument length ({len(titles)}) doesn't match with result length ({len(result)}) !")
@@ -324,7 +348,7 @@ def get_wp_pages_content(viet_pages,r,limit=100000):
                 "date": page["flagged_date"]
             })
                 
-    # FIXME
+    # TODO rework patrolled stats
     viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
     viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
     viet_pages_old_patrolled = sorted(viet_pages_old_patrolled, key=lambda d: d['date'])
@@ -339,8 +363,9 @@ class OloloLink():
 
 def get_wp_internal_links(viet_pages_content):
     """
-    Build a big list of internal links from a big list of pages content.
+    Build a big list of internal links (Ololo type) from a big list of pages content.
     """
+    # TODO remove obsolete function
     links_ololo = []
     links_ololo_arr = []
     i = 0
@@ -352,6 +377,17 @@ def get_wp_internal_links(viet_pages_content):
                 links_ololo.append(OloloLink(m, page['title']))
                 links_ololo_arr.append({'link': m, 'page': page['title']})
     return links_ololo
+
+def get_wp_internal_links_flat(pages_content):
+    """
+    Build a big list of internal links (just links) from a big list of pages content.
+    """
+    result = []
+    for page in pages_content:
+        mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page['content'])
+        for m in mc:
+            result.append(m)
+    return result
 
 def get_wp_page_sections(content):
     """
@@ -528,39 +564,6 @@ def get_wp_categories(pagenames):
         result.append(page_cats)
     return result
 
-# def get_redirect_target_web(page_name):
-    # # Получаем целевую страницу для редиректа
-    # get_target = {
-        # "action": "query",
-        # "format": "json",
-        # "titles": page_name,
-        # "redirects": "1"
-    # }
-    # res = requests.get(script_config["api_url"], params=get_target).json()
-
-    # try:
-        # redirects = res.get("query", {}).get("redirects", [])
-        # if redirects:
-            # #target_title = redirects[0]["to"]
-            # return redirects[0]["to"]
-            # # r.set(f"wiki:redirect:{page_name}", target_title)
-            # # count += 1
-    # except Exception as e:
-        # print(f"Ошибка: {e}")
-
-# def get_redirect_target(page_name,r):
-    # cached_redirect = r.get(f"page:isredirect:{page_name}")
-    # if cached_redirect:
-        # print(f"  <<< Have cached isredirect for {page_name}")
-        # cached_redirect_target = r.get(f"page:redirect:{page_name}")
-        # if cached_redirect_target:
-            # print(f"  <<< GOOD! Have cached redirect target for {page_name}")
-            # return cached_redirect_target
-        # redirect_target = get_redirect_target_web(page_name)
-        # r.setex(f"page:redirect:{redirect_target}", datetime.timedelta(hours=ttl_hours), value=1)
-    # else:
-        # return page_name
-
 def get_disambigs_targets(redirects):
     print("Invoke redirect checker for", len(redirects), "pages")
     # Ensure we have a list to iterate on
@@ -626,119 +629,6 @@ def get_disambigs_targets(redirects):
             # long_redirects.append(rd)
             # #print("Now long redirs is", long_redirects)
     return redirect_pairs
-
-def get_disambigs2(dis_pages,r):
-    # Three-step check.
-    # Every page is requested 3 times from Redis, but IDK
-    # Step 1. Dump everything to cache.
-    
-    # Step 2. Search for redirects, dump redirect targets to cache
-    
-    # Step 3. Search for disambigs.    
-    # Now every page must be in cache, so we take everything from cache
-    result = []
-    for d_page in dis_pages:
-        red_cached = r.get(f"page:content:{title}")
-    return None
-
-def get_disambigs(dis_pages,r):
-    """
-    Gets a list of page names
-    Returns a list of disambigs
-    No more non-disambigs or long/ugly redirects returned
-    """
-    print("get_disambigs invoked! ===")
-    result = {}
-    redirects = []
-    dis_page_names = []
-    # Redis fun
-    ttl_hours = 336
-    for dis_page in dis_pages:
-        # instantly omit trash links
-        if re.search(r"\[", dis_page.link) or \
-           re.search(r"\]", dis_page.link):
-            print(f"Skipping trash link: {dis_page.link}")
-            continue
-        # Redis fun
-        # 4 - no page, 1 - ordinary, 2 - disambig, 3 - redirect
-        red_cached = r.get(f"page:status:{dis_page.link}")
-        if red_cached:
-            # print(f"  >>> Have cached {dis_page.link} : {red_cached}")
-            if red_cached == "4":
-                ##print(f"{dis_page.link} is a redlilnk")
-                # removed as a not-disambig
-                #result[dis_page.link] = False
-                pass
-            elif red_cached == "1":
-                ##print(f"{dis_page.link} is an ordinary page")
-                # removed as a not-disambig
-                #result[dis_page.link] = False
-                pass
-            elif red_cached == "2":
-                ##print(f"{dis_page.link} is a disambig! (!)")
-                result[dis_page.link] = True
-            elif red_cached == "3":
-                ##print(f"{dis_page.link} is a redirect")
-                redirects.append(dis_page.link)
-        else:
-            # print(f"  XXX Have no cached {dis_page.link}")
-            dis_page_names.append(dis_page.link)
-    # dis_page_batch = '|'.join(dis_page_names)
-
-    # Get target of link: ordinary page, redirect, or redlink
-    for mb_page in get_wp_categories(dis_page_names):
-        if len(mb_page["categories"]):
-            is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
-            # Redis fun
-            if is_disambig:
-                # print(f"  <<< Caching {mb_page['title']} as a disambig (2)")
-                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
-                result[mb_page['title']] = is_disambig
-            else:
-                # print(f"  <<< Caching {mb_page['title']} as an ordinary page (1)")
-                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
-        else:
-            # Check if it is a redirect or just a red link
-            if mb_page['missing']:
-                # Red lisk is obviously not a disambig
-                print(f"  <<< Caching {mb_page['title']} as a redlink (4)")
-                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=4)
-            else:
-                # The page exists and has no categories, so it must be a redirect
-                # We'll check it later.
-                redirects.append(mb_page['title'])
-    # If there are no redirects, then just return disambig status for pages
-    if not len(redirects):
-        # print("no redirects to check,", redirects)
-        return result,[]
-    # If there are redirects, then check them
-    redirect_pairs = get_disambigs_targets(redirects)
-    redirect_targets = [item['to'] for item in redirect_pairs]
-
-    for mb_page in get_wp_categories(redirect_targets):
-        #if "categories" in mb_page.keys():
-        if len(mb_page["categories"]):
-            is_disambig = "Категория:Страницы значений по алфавиту" in mb_page['categories']
-            if is_disambig:
-                print(f"  <<< Caching {mb_page['title']} as a disambig (2)")
-                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=2)
-                result[mb_page['title']] = is_disambig
-            else:
-                # print(f"  <<< Caching {mb_page['title']} as an ordinary page (1)")
-                r.setex(f"page:status:{mb_page['title']}", datetime.timedelta(hours=ttl_hours), value=1)
-        else:
-            print("------------skipping faulty page", mb_page['title'])
-            is_disambig = False
-        for pair in redirect_pairs:
-            if pair['to'] == mb_page['title']:
-                if is_disambig:
-                    print(f"  <<< AFTER-REDIR: Caching {pair['from']} as a disambig (2)")
-                    r.setex(f"page:status:{pair['from']}", datetime.timedelta(hours=ttl_hours), value=2)
-                    result[pair['from']] = is_disambig
-                else:
-                    # print(f"  <<< AFTER-REDIR: Caching {pair['from']} as an ordinary page (1)")
-                    r.setex(f"page:status:{pair['from']}", datetime.timedelta(hours=ttl_hours), value=1)
-    return result
 
 def parse_check_template(template_text,target_page):
     """
@@ -830,13 +720,3 @@ def get_justtext_content(viet_page_content, debug=False):
     if debug:
         return full_content, templs
     return full_content
-
-def normalize_link(link):
-    if link == "":
-        return ""
-    normalized_link = link[0].upper() + link[1:]
-    normalized_link = normalized_link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
-    normalized_link = re.sub("#.*$","", normalized_link)
-    # if not link == normalized_link:
-        # print(f"{link} normalized to {normalized_link}")
-    return normalized_link

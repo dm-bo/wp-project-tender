@@ -3,6 +3,7 @@ import re
 from wp_functions_aux import get_wp_page_sections, get_date_format
 from wp_functions_aux import get_wp_pages_content, get_norefs_nolinks_content, get_justtext_content
 from wp_functions_aux import get_wp_articles_content_cached
+from wp_functions_aux import get_wp_internal_links_flat
 
 class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
@@ -229,10 +230,7 @@ def check_wp_no_cats(viet_pages_content,r):
 
 def check_wp_no_links_in_links(viet_pages_content,r):
     result = []
-    # FIXME testing migration: get_wp_pages_content -> get_wp_articles_content_cached
-    #exclude_templates_raw = get_wp_pages_content(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
     exclude_templates_raw = get_wp_articles_content_cached(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
-    #exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0][0]['content'])
     exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0]['content'])
     for page in viet_pages_content:
         # nothing to do if there is no "Ссылки" section
@@ -416,6 +414,55 @@ def check_wp_images(viet_pages_content):
             if re.search(r"Википедия:Статьи без изображений", cat):
                 #result += page['title']
                 result.append(ProblemPage(title=page['title']))
-    return result 
+    # result_sorted = sorted(set(items))
+    result_unique = {item.title: item for item in result}.values()
+    # потом сортируем по name
+    result_sorted = sorted(result_unique, key=lambda x: x.title)
+    return result_sorted
+
+def check_links_to_disambigs(pages_content,r):
+    # Step 1. Dump all links targets to cache
+    # Step 2. Get content for all link targets (non -redirects)
+    # Sep 3. For all redirects, get a redirect target and check it
+    result = []
+    i = 0
+    for page in pages_content:
+        i = i + 1
+        print(f"Checking disambigs on {page['title']} ( {i} / {len(pages_content)} )")
+        page_disambigs = []
+        internal_links = get_wp_internal_links_flat([page])
+        internal_links_targets_content = get_wp_articles_content_cached(internal_links,r,verbose=False)
+        
+        redirect_pairs = {}
+        redirects = []
+        for i_l in internal_links_targets_content:
+            #print(f"Disamb working on {i_l["title"]}")
+            if 'redirects_to' in i_l:
+                if i_l['redirects_to']:
+                    print("R".ljust(12) + f"{i_l['title']} -> {i_l['redirects_to']}")
+                    redirect_pairs[i_l['title']] = i_l['redirects_to']
+                    #redirest_pairs.append(a)
+                    #exit(555)
+                    #continue
+            if 'categories' in i_l:
+                if "Категория:Страницы значений по алфавиту" in i_l['categories']:
+                    print("DIS IS A DISAMBIG!")
+                    page_disambigs.append(f"[[{i_l['title']}]]")
+        if page['title'] == "Командование по оказанию военной помощи Вьетнаму" and False:
+            print("now move over redirect_pairs")
+            print(redirect_pairs)
+            exit(88)
+        for i_p, key_p in redirect_pairs.items():
+            #print(f"workink on i_p, key_p: {i_p}, {key_p}")
+            redirect_target_content = get_wp_articles_content_cached([key_p],r,verbose=False)[0]
+            #print(redirect_target_content)
+            if "Категория:Страницы значений по алфавиту" in redirect_target_content['categories']:
+                print("DIS IS A REDIRECTR To DISAMBIG!!!")
+                page_disambigs.append(f"[[{i_p}]]")
+        page_disambigs_sorted = sorted(set(page_disambigs))
+        if len(page_disambigs) > 0:   
+            result.append(ProblemPage(title=page['title'],samples=page_disambigs_sorted))
+            print(f"{page['title']} added with disambigs {page_disambigs_sorted}")
+    return result
 
 ### Single-Page Checks ###
