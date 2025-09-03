@@ -13,7 +13,7 @@ from jinja2 import Environment, FileSystemLoader
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_content
 from wp_functions_aux import get_wp_internal_links, get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_wp_pages_by_category_recurse
-from wp_functions_aux import parse_check_template, normalize_link
+from wp_functions_aux import parse_check_template
 #
 from wp_functions_check import check_links_to_disambigs
 from wp_functions_check import *
@@ -93,7 +93,7 @@ for post_results_page in result_pages:
     cannot_check = []
 
     # Checking that result page is not too fresh
-    result_content = get_wp_articles_content_cached([post_results_page],red_con)
+    result_content = get_wp_content_cached([post_results_page],red_con)
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
         result_content[0]['content'])
     template_options = ""
@@ -143,7 +143,7 @@ for post_results_page in result_pages:
     # Loading exceptions list
     if 'except_pages' in check_template.keys():
         if not check_template['except_pages'] == '':
-            excludes_content = get_wp_articles_content_cached([check_template['except_pages']],red_con)
+            excludes_content = get_wp_content_cached([check_template['except_pages']],red_con)
             exclude_pages = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", excludes_content[0]['content'])
     else:
         exclude_pages = []
@@ -156,7 +156,7 @@ for post_results_page in result_pages:
 
     area = re.findall(r"\:([^\/\:]*)\/", post_results_page)[0]
     area = re.findall(r"\:(.*)", post_results_page)[0].replace("/","_")
-    output_file = f"C:/Users/Dm/Desktop/wp/badlinks-{area}.py.txt"
+    OUTPUT_FILE = f"C:/Users/Dm/Desktop/wp/badlinks-{area}.py.txt"
 
     print("Updating page ", post_results_page)
 
@@ -169,7 +169,6 @@ for post_results_page in result_pages:
         # checks_enabled["Disambigs"] = False
         # checks_enabled["UglyRedirects"] = False
 
-    #viet_pages = get_pages_by_template("Шаблон:Статья проекта Карелия",1)
     checks.append(Check(
         name="Total",
         title="Всего",
@@ -652,7 +651,8 @@ for post_results_page in result_pages:
             total=len(viet_pages))
         )
 
-    ### Overwikified dates ###
+    ### Overwikified dates ###    
+    
     # TODO rewrite this
     # пока на похер работает как работает
 
@@ -661,16 +661,15 @@ for post_results_page in result_pages:
     from itertools import groupby
     internal_links = get_wp_internal_links(viet_pages_content)
     date_links = []
-    #rx_date = r"^[0-9]* (?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$"
-    rx_date = (
+    RX_DATE = (
         r"^[0-9]* "
         r"(?:января|февраля|марта|апреля|мая|июня|"
         r"июля|августа|сентября|октября|ноября|декабря)$"
     )
-    rx_year = r"^[0-9]* год$"
+    RX_YEAR = r"^[0-9]* год$"
     for link in internal_links:
         #print(link)
-        if re.search(rx_date, link.link) or re.search(rx_year, link.link):
+        if re.search(RX_DATE, link.link) or re.search(RX_YEAR, link.link):
             date_links.append(link)
 
     sorted_dates = sorted(date_links, key=lambda x: x.page, reverse=True)
@@ -738,12 +737,12 @@ for post_results_page in result_pages:
     # Local file
     # This goes before the web. If web posting fails, we'll be able to debug using this
 
-    with open(output_file, mode="w", encoding="utf-8") as message:
+    with open(OUTPUT_FILE, mode="w", encoding="utf-8") as message:
         message.write(content)
-        print(f"... wrote {output_file}")
+        print(f"... wrote {OUTPUT_FILE}")
 
     # Web
-    #exit(0)
+    exit(0)
     if set_wp_page_text(session, post_results_page, content, summary):
         print("Updated.")
     else:
@@ -751,3 +750,4 @@ for post_results_page in result_pages:
 
     ### Stats ###
     print(datetime.datetime.now()-moment_start)
+

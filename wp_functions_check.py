@@ -2,7 +2,7 @@ import re
 
 from wp_functions_aux import get_wp_page_sections, get_date_format
 from wp_functions_aux import get_wp_pages_content, get_norefs_nolinks_content, get_justtext_content
-from wp_functions_aux import get_wp_articles_content_cached
+from wp_functions_aux import get_wp_content_cached
 from wp_functions_aux import get_wp_internal_links_flat
 
 class ProblemPage():
@@ -209,7 +209,7 @@ def check_wp_links_in_text(viet_pages_content):
 
 def check_wp_no_cats(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_articles_content_cached(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'],r)
+    exclude_templates_raw = get_wp_content_cached(['Участник:KlientosBot/project-tender/Категоризирующие шаблоны'],r)
     # searches for [[:Шаблон: or [[Шаблон: on the page
     exclude_templates = re.findall(r"\[\[[\:]*Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0]['content'])
     # print("Found templates:")
@@ -230,7 +230,7 @@ def check_wp_no_cats(viet_pages_content,r):
 
 def check_wp_no_links_in_links(viet_pages_content,r):
     result = []
-    exclude_templates_raw = get_wp_articles_content_cached(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
+    exclude_templates_raw = get_wp_content_cached(['Участник:KlientosBot/project-tender/Шаблоны-ссылки'],r)
     exclude_templates = re.findall(r"\[\[Шаблон\:([^\|\]\:]*)[\|\]]", exclude_templates_raw[0]['content'])
     for page in viet_pages_content:
         # nothing to do if there is no "Ссылки" section
@@ -431,7 +431,7 @@ def check_links_to_disambigs(pages_content,r):
         print(f"Checking disambigs on {page['title']} ( {i} / {len(pages_content)} )")
         page_disambigs = []
         internal_links = get_wp_internal_links_flat([page])
-        internal_links_targets_content = get_wp_articles_content_cached(internal_links,r,verbose=False)
+        internal_links_targets_content = get_wp_content_cached(internal_links,r,verbose=False)
         
         redirect_pairs = {}
         redirects = []
@@ -454,7 +454,7 @@ def check_links_to_disambigs(pages_content,r):
             exit(88)
         for i_p, key_p in redirect_pairs.items():
             #print(f"workink on i_p, key_p: {i_p}, {key_p}")
-            redirect_target_content = get_wp_articles_content_cached([key_p],r,verbose=False)[0]
+            redirect_target_content = get_wp_content_cached([key_p],r,verbose=False)[0]
             #print(redirect_target_content)
             if "Категория:Страницы значений по алфавиту" in redirect_target_content['categories']:
                 print("DIS IS A REDIRECTR To DISAMBIG!!!")

@@ -11,6 +11,13 @@ from config import get_tender_config
 script_config = get_tender_config()
 
 def normalize_link(link):
+    """
+    To fix internal links.
+    Removes everything that can interfere link processing:
+      #something
+      {{nbsp}}
+      <noinclude>
+    """
     if link == "":
         return ""
     normalized_link = link[0].upper() + link[1:]
@@ -48,7 +55,11 @@ def get_wp_page_content(params):
         i += 1
         session = requests.Session()
         try:
-            response = session.get(url=script_config["api_url"], params=params, headers=script_config["headers"])
+            response = session.get(
+                url=script_config["api_url"],
+                params=params,
+                headers=script_config["headers"]
+            )
         except:
             print(f"Error getting page ({i}), waiting {sleep_timeout} seconds...")
             print("..........")
@@ -72,9 +83,9 @@ def structure_page_data(page_data):
     elif 'pending_since' in page_data['flagged']:
         #flagged_date = dateutil.parser.isoparse(page_data['flagged']['pending_since'])
         flagged_date = page_data['flagged']['pending_since']
-        flagged = "old"    
+        flagged = "old"
     else:
-        flagged = "current"    
+        flagged = "current"
     content = ""
     if "revisions" in page_data:
         content = page_data['revisions'][0]['slots']['main']['content']
@@ -94,7 +105,7 @@ def structure_page_data(page_data):
       "missing": missing
     }
 
-def get_wp_articles_content(titles,r):
+def get_wp_content(titles,r):
     """
     Returns structured data of bunch of articles from web.
     Writes structured JSON to Redis cache.
@@ -125,11 +136,9 @@ def get_wp_articles_content(titles,r):
     structured_pages = []
     for pagina in paginas:
         structured_page = structure_page_data(pagina)
-        # TODO move to config
-        LEN_CACHE_NOTICE = 102400
-        if len(str(structured_page)) > LEN_CACHE_NOTICE:
-            #print(f"  <<< Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
-            print("<<<".ljust(12) + f"Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
+        if len(str(structured_page)) > script_config["LEN_CACHE_NOTICE"]:
+            print("<<<".ljust(12) + \
+                f"Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
         r.setex(f"page:content:{structured_page['title']}",
             datetime.timedelta(hours=script_config["cache_content_ttl"]),
             value=str(structured_page)
@@ -138,7 +147,7 @@ def get_wp_articles_content(titles,r):
     #return paginas
     return structured_pages
 
-def get_wp_articles_content_cached(titles,r,verbose=True):
+def get_wp_content_cached(titles,r,verbose=True):
     """
     Returns summarized pages (structured JSON) both from cache and web requests.
     Deals with cache. Deals with batch size.
@@ -165,8 +174,6 @@ def get_wp_articles_content_cached(titles,r,verbose=True):
                 f"web requests planned: {len(need_web_request)},",
                 f"cache hits: {j_red} ({round(100*j_red/max(j,1),1)}%",
                 f"so far, {round(100*j_red/len(titles),1)}% total)")
-    API_BATCH_SIZE = 50
-    URI_LENGTH_REDLINE = 1400
     i = 0
     batch_titles = []
     # print("so we have need_web_request:")
@@ -176,16 +183,15 @@ def get_wp_articles_content_cached(titles,r,verbose=True):
         batch_titles.append(n_title)
         i = i + 1
         if i == len(need_web_request) or \
-          len(batch_titles) == API_BATCH_SIZE or \
-          len('|'.join(batch_titles)) > URI_LENGTH_REDLINE:
-            # pages goes to Redis cache here
-            # print("requesting get_wp_articles_content for")
-            # print(batch_titles)
-            dont_need_this_var = get_wp_articles_content(batch_titles,r)
+          len(batch_titles) == script_config["API_BATCH_SIZE"] or \
+          len('|'.join(batch_titles)) > script_config["URI_LENGTH_REDLINE"]:
+            dont_need_this_var = get_wp_content(batch_titles,r)
             if verbose:
-                print("web-http".ljust(12) + f"Page really requested: {i} of planned {len(need_web_request)} (batch {len(batch_titles)}, URI len {len('|'.join(batch_titles))})")
+                print("web-http".ljust(12) + \
+                  f"Page really requested: {i} of planned {len(need_web_request)} " + \
+                  f"(batch {len(batch_titles)}, URI len {len('|'.join(batch_titles))})")
             batch_titles = []
-    
+
     # Now every page must be in cache, so we take everything from cache
     # FIXME not reliable, we need dont_need_this_var
     result = []
@@ -193,16 +199,8 @@ def get_wp_articles_content_cached(titles,r,verbose=True):
         normal_title = normalize_link(title)
         red_cached = r.get(f"page:content:{normal_title}")
         if red_cached:
-            #print()
-            #print(red_cached)
             next_result = ast.literal_eval(red_cached)
-            # print(next_result["flagged_date"])
-            # print(type(next_result["flagged_date"]))
             next_result["flagged_date"] = datetime.datetime.fromisoformat(next_result["flagged_date"])
-            # print("Converted:")
-            # print(next_result["flagged_date"])
-            # print(type(next_result["flagged_date"]))
-            # print() 
             result.append(next_result)
         else:
             print(f"OMG! OMG! Cunt get cached content for {normal_title}!")
@@ -212,6 +210,9 @@ def get_wp_articles_content_cached(titles,r,verbose=True):
     return result
 
 def print_http_response(response):
+    """
+    Just to print http response more verbose
+    """
     print(response)
     print("Статус-код:", response.status_code)
     print("Заголовки:", response.headers)
@@ -220,7 +221,6 @@ def print_http_response(response):
     print("Cookies:", response.cookies)
     print("История редиректов:", response.history)
     print("Cannot get response!")
-    return None
 
 # gets template name
 # returns array of page names
@@ -236,23 +236,22 @@ def get_wp_pages_by_template(template, namespace):
     session = requests.Session()
     result = []
     have_data_to_get = True
-    RUN_PARAMS = INIT_PARAMS
+    run_params = INIT_PARAMS
     while have_data_to_get:
-        response = session.get(url=script_config["api_url"], params=RUN_PARAMS, headers=script_config["headers"])
+        response = session.get(url=script_config["api_url"], params=run_params, headers=script_config["headers"])
         try:
             pages_dict = response.json()['query']["pages"]
         except:
             print_http_response(response)
-            exit(4)
+            sys.exit(4)
         transcluded_objs = pages_dict[list(pages_dict)[0]]['transcludedin']
         # res = [ sub['gfg'] for sub in test_list ]
         for ti in transcluded_objs:
             result.append(ti['title'].replace('Обсуждение:',''))
         if 'continue' in response.json().keys():
-            # TODO print adequate info instead of this
-            print("Let's continue!")
-            print(response.json()['continue'])
-            RUN_PARAMS = dict(list(INIT_PARAMS.items()) + list(response.json()['continue'].items()))
+            print(f"Let's continue getting by template {template}! {len(result)} so far.")
+            # print(response.json()['continue'])
+            run_params = dict(list(INIT_PARAMS.items()) + list(response.json()['continue'].items()))
             have_data_to_get = True
         else:
             have_data_to_get = False
@@ -322,12 +321,11 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
     return pages
 
 def get_wp_pages_content(viet_pages,r,limit=100000):
-    batch_size = 10
     viet_pages_content = []
     viet_pages_not_patrolled = []
     viet_pages_old_patrolled = []
 
-    paginas = get_wp_articles_content_cached(viet_pages,r)
+    paginas = get_wp_content_cached(viet_pages,r)
     for page in paginas:
         viet_pages_content.append({
             "title": page['title'],
@@ -347,7 +345,7 @@ def get_wp_pages_content(viet_pages,r,limit=100000):
                 "title": page['title'],
                 "date": page["flagged_date"]
             })
-                
+
     # TODO rework patrolled stats
     viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
     viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
@@ -361,7 +359,7 @@ class OloloLink():
     def __repr__(self):
         return f'[[{self.link}]] ({self.page})'
 
-def get_wp_internal_links(viet_pages_content):
+def get_wp_internal_links(pages_content):
     """
     Build a big list of internal links (Ololo type) from a big list of pages content.
     """
@@ -369,7 +367,7 @@ def get_wp_internal_links(viet_pages_content):
     links_ololo = []
     links_ololo_arr = []
     i = 0
-    for page in viet_pages_content:
+    for page in pages_content:
         i += 1
         mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page['content'])
         if mc:
@@ -486,7 +484,8 @@ def set_wp_page_text(session, title, text, summary):
         "meta":   "tokens",
         "format": "json"
     }
-    response = session.get(url=script_config["api_url"], params=PARAMS_4, headers=script_config["headers"])
+    response = session.get(url=script_config["api_url"], params=PARAMS_4,
+        headers=script_config["headers"])
     csrf_token = response.json()['query']['tokens']['csrftoken']
 
     # POST request to edit a page
@@ -500,135 +499,13 @@ def set_wp_page_text(session, title, text, summary):
         "format":   "json"
     }
 
-    response = session.post(url=script_config["api_url"], data=PARAMS_5, headers=script_config["headers"])
+    response = session.post(url=script_config["api_url"], data=PARAMS_5,
+        headers=script_config["headers"])
     print(response.json())
     if response.json()['edit']['result'] == "Success":
         return True
     print(response.json()['edit'])
     return False
-
-def get_wp_categories(pagenames):
-    """
-    Get categories for pages.
-    Can deal with API limit.
-    """
-    if not pagenames:
-        return[]
-    # TODO change 500 to MAXLIMIT
-    PARAMS_0 = {
-        'action': "query",
-        'formatversion':   2,
-        'prop':   "categories",
-        'cllimit': 500,
-        'titles': '|'.join(pagenames),
-        'format': "json"
-    }
-    # session = requests.Session()
-    result_dict = {}
-    result = []
-    have_data_to_get = True
-    pages_missing = []
-    params_1 = PARAMS_0
-    while have_data_to_get:
-        cat_len_tot = 0
-        response = get_wp_page_content(params_1)
-        pages_dict = response.json()['query']["pages"]
-        for page in pages_dict:
-            # print("===", page['title'], "===")
-            if not page['title'] in result_dict:
-                result_dict[page['title']] = []
-            if 'categories' in page.keys():
-                for cat in page['categories']:
-                    # print(cat['title'])
-                    result_dict[page['title']].append(cat['title'])
-                cat_len = len(page['categories'])
-                cat_len_tot = cat_len_tot + cat_len
-                # print("Len:", cat_len, ", total:", cat_len_tot)
-            if 'missing' in page.keys():
-                #print("Missing page:", page['title'])
-                pages_missing.append(page['title'])
-            #print(result_dict)
-        if 'continue' in response.json().keys():
-            print("Let's continue cats!")
-            print(response.json()['continue'])
-            params_1 = dict(list(PARAMS_0.items()) + list(response.json()['continue'].items()))
-            have_data_to_get = True
-        else:
-            have_data_to_get = False
-    for i_p, key_p in enumerate(result_dict):
-        page_cats = {
-            "title": key_p,
-            "categories": result_dict[key_p],
-            "missing": key_p in pages_missing
-        }
-        result.append(page_cats)
-    return result
-
-def get_disambigs_targets(redirects):
-    print("Invoke redirect checker for", len(redirects), "pages")
-    # Ensure we have a list to iterate on
-    redirects = [redirects] if isinstance(redirects, str) else redirects
-    # COSTYLE
-    # TODO function "clean redirects"
-    redirects1 = []
-    redirects_debug = ""
-    for redir in redirects:
-        redir1 = redir.replace("{{nbsp}}", " ").replace("<includeonly>", "").replace("</includeonly>", "")
-        redirects_debug += f"cleaning {redir} to {redir1}\n"
-        if not re.search(r"{{", redir1) and \
-          not re.search(r"<", redir1):
-            redirects1.append(redir1)
-        else:
-            print(f"Skipping redir target {redir1}!")
-    # Resolve redirects
-    redirect_pairs = []
-    session = requests.Session()
-    request_params = {
-        'action': "query",
-        'formatversion':   2,
-        'redirects': 1,
-        'titles': '|'.join(redirects1),
-        'format': "json"
-    }
-    response2 = session.get(url=script_config["api_url"], params=request_params, headers=script_config["headers"])
-    if "query" in response2.json():
-        if not "redirects" in response2.json()['query']:
-            print("Cannot find redirects!")
-            print(response2.json()['query'])
-    else:
-        print("Cannot find adequate response!")
-        print(redirects)
-        print(redirects_debug)
-        print(response2.json())
-    ##print("Resolving redirects:")
-    ##print(response2.json()['query']['redirects'])
-    try:
-        responce2_redirects = response2.json()['query']['redirects']
-    except:
-        print("Failed with params:")
-        print(request_params)
-        exit(77)
-    for redirect in responce2_redirects:
-        try:
-            rd = redirect['from']
-            redirect_target = redirect['to']
-        except KeyError:
-            print("======== KeyError while resolving redirect ==========!!!")
-            print(response2.json())
-            sys.exit(2)
-        redirect_pair = {
-            'from': rd,
-            'to': redirect_target
-        }
-        redirect_pairs.append(redirect_pair)
-        # #print(rd, "redirects to", redirect_target)
-        # if re.search(r"\(.*\)", rd) and \
-          # not re.search(r"\(.*\)", redirect_target) and \
-          # len(rd) > len(redirect_target):
-            # #print("^^^^^^ That was a bad redirect! ^^^^^^^")
-            # long_redirects.append(rd)
-            # #print("Now long redirs is", long_redirects)
-    return redirect_pairs
 
 def parse_check_template(template_text,target_page):
     """
