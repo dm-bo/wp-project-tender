@@ -1,13 +1,5 @@
 {% if prologue %}{{ prologue }}
 {% endif %}
-{% if viet_pages_not_patrolled or viet_pages_old_patrolled %}
-== Не отпатрулированные статьи ==
-{% for page in viet_pages_not_patrolled %}
-* [[{{page}}]] вообще не патрулировалась
-{% endfor %}{% endif %}
-{% if viet_pages_old_patrolled %}{% for page in viet_pages_old_patrolled %}
-* [[{{page.title}}]] не патрулировалась с {{page.date.strftime('%Y-%m-%d')}}
-{% endfor %}{% endif %}
 
 == Недостатки статей ==
 {% for check in checks %}{% if not check.supress_listing %}{% if check.counter %}
@@ -25,6 +17,7 @@
 {% endif %}
 {% endfor %}{% endif %}{# for problem sample #}
 {% endfor %}{# for problem page #}
+
 {% endif %}{% endif %}{% endfor %}{# for check #}
 == Статистика ==
 {| class="wikitable"

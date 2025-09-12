@@ -10,6 +10,19 @@ from config import get_tender_config
 
 script_config = get_tender_config()
 
+def print_http_response(response):
+    """
+    Just to print http response more verbose
+    """
+    print(response)
+    print("Статус-код:", response.status_code)
+    print("Заголовки:", response.headers)
+    print("Тело ответа:", response.text)
+    print("URL:", response.url)
+    print("Cookies:", response.cookies)
+    print("История редиректов:", response.history)
+    print("Cannot get response!")
+
 def normalize_link(link):
     """
     To fix internal links.
@@ -22,7 +35,9 @@ def normalize_link(link):
         return ""
     normalized_link = link[0].upper() + link[1:]
     normalized_link = normalized_link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
-    normalized_link = re.sub("#.*$","", normalized_link)
+    normalized_link = normalized_link.replace("&nbsp;"," ")
+    normalized_link = normalized_link.replace("&amp;","&").strip()
+    normalized_link = re.sub("#.*$","", normalized_link).strip()
     # if not link == normalized_link:
         # print(f"{link} normalized to {normalized_link}")
     return normalized_link
@@ -40,13 +55,13 @@ def find_redirect_in_content(content):
     pattern2 = re.compile(r"#REDIRECT\s*\[\[(.*?)\]\]", re.IGNORECASE)
     n = pattern2.search(content)
     if n:
-        return n.group(1)
+        return normalize_link(n.group(1)).split("|")[0]
     return ""
 
 def get_wp_page_content(params):
     """
-    Returns raw data of bunch of pages.
-    Deals with HTTP errors.
+    Returns raw data of request of pages.
+    Deals with HTTP errors and retries
     """
     limit = 3
     i = 0
@@ -68,9 +83,11 @@ def get_wp_page_content(params):
         if response.status_code == 200:
             return response
         if response.status_code == 414:
+            # TODO works only for requested pages (not for categories)
             print(f"URI too long! ({len(params["titles"])})")
             print(params["titles"])
             sys.exit(414)
+        #print_http_response(response)
         print(f"Got responce {response.status_code}, waiting {sleep_timeout} secs and retry...")
         print("..........")
         time.sleep(sleep_timeout)
@@ -78,6 +95,7 @@ def get_wp_page_content(params):
 
 def structure_page_data(page_data):
     flagged_date = "1970-01-01"
+    debug_title = "Азиатские игры"
     if not 'flagged' in page_data:
         flagged = "never"
     elif 'pending_since' in page_data['flagged']:
@@ -91,8 +109,11 @@ def structure_page_data(page_data):
         content = page_data['revisions'][0]['slots']['main']['content']
     categories = []
     if "categories" in page_data:
+        # print("Cattegories:")
+        # print(page_data["categories"])
         for cat in page_data["categories"]:
             categories.append(cat["title"])
+        # categories = page_data["categories"]
     missing = "missing" in page_data
     redirects_to = find_redirect_in_content(content)
     return {
@@ -109,11 +130,9 @@ def get_wp_content(titles,r):
     """
     Returns structured data of bunch of articles from web.
     Writes structured JSON to Redis cache.
-    Knows about missng pages and flagged revisions (not yet).
     Level 1 wrapper for get_wp_page_content.
-    Lays between get_wp_pages_content and get_wp_page_content (!)
+    Lays between get_wp_page_content and get_wp_content_cached
     """
-    #get_wp_page_content(params)
     REQ_PARAMS = {
         "action": "query",
         "format": "json",
@@ -121,37 +140,65 @@ def get_wp_content(titles,r):
         "formatversion": 2,
         "rvprop": "content",
         "rvslots": "*",
-        "titles": '|'.join(titles) #.replace("&","%26").replace("/","%2F")
+        "titles": '|'.join(titles),
+        "cllimit": 50
     }
-    # print(REQ_PARAMS['titles'])
-    response = get_wp_page_content(REQ_PARAMS)
-    try:
-        paginas = response.json()['query']['pages']
-    except:
-        print(f"!!! Can't get paginas from response! Params: {REQ_PARAMS}")
-        print(response)
-        print(response.json())
-        sys.exit(404)
+    # Compiling multiple answers to a complete one
+    # Can be moved to underlying function (over get_wp_page_content)
+    #  (with REQ_PARAMS)
+    # Structuring JSON can be moved as well (now we have extra step with non-standard JSON)
+    all_pages = {}
+    while True:
+        response = get_wp_page_content(REQ_PARAMS)
+        data = response.json()
+        for page in response.json()['query']['pages']:
+            # print()
+            # print("Keys of page:")
+            # print(page.keys())
+            if not page['title'] in all_pages.keys():
+                all_pages[page['title']] = {}
+                #all_pages[page['title']]["categories"] = []
+            for key in page.keys():
+                #if key == "categories":
+                if isinstance(page[key], list):
+                    if not key in all_pages[page['title']].keys():
+                        all_pages[page['title']][key] = []
+                    all_pages[page['title']][key] += page[key]
+                else:
+                    all_pages[page['title']][key] = page[key]
+                # print(f"Key {key}:")
+                # print(page[key])
+        # проверяем, есть ли продолжение
+        if "continue" in data:
+            REQ_PARAMS.update(data["continue"])  # добавляем clcontinue и т. п.
+        else:
+            break
+    paginas = []
+    for pagid in all_pages.keys():
+        paginas.append(all_pages[pagid])
+    # try:
+        # paginas = response.json()['query']['pages']
+    # except:
+        # print(f"!!! Can't get paginas from response! Params: {REQ_PARAMS}")
+        # print(response.json())
+        # sys.exit(404)
+
     # Converting to own-structured JSON and cache it
     structured_pages = []
     for pagina in paginas:
         structured_page = structure_page_data(pagina)
-        if len(str(structured_page)) > script_config["LEN_CACHE_NOTICE"]:
-            print("<<<".ljust(12) + \
-                f"Going to cache data sized {round(len(str(structured_page))/1024,0)}k")
         r.setex(f"page:content:{structured_page['title']}",
             datetime.timedelta(hours=script_config["cache_content_ttl"]),
             value=str(structured_page)
             )
         structured_pages.append(structured_page)
-    #return paginas
     return structured_pages
 
 def get_wp_content_cached(titles,r,verbose=True):
     """
     Returns summarized pages (structured JSON) both from cache and web requests.
-    Deals with cache. Deals with batch size.
-    Level 1 wrapper for get_wp_articles_content. Level 2 wrapper for get_wp_page_content.
+    Deals with cache. Deals with batch size. Deals with incorrect and bad-formatted links.
+    Level 1 wrapper for get_wp_content. Level 2 wrapper for get_wp_page_content.
     """
     need_web_request = []
     # just for statistics
@@ -203,24 +250,14 @@ def get_wp_content_cached(titles,r,verbose=True):
             next_result["flagged_date"] = datetime.datetime.fromisoformat(next_result["flagged_date"])
             result.append(next_result)
         else:
-            print(f"OMG! OMG! Cunt get cached content for {normal_title}!")
+            print(f"OMG! OMG! Cunt get cached content for {normal_title} ({title})!")
     # Last man's check
     if not len(titles) == len(result):
         print(f"FATAL: argument length ({len(titles)}) doesn't match with result length ({len(result)}) !")
+        exit(8)
+    #result = sorted(result, key=lambda x: x.title, reverse=True)
+    result = sorted(result, key=lambda d: d['title'])
     return result
-
-def print_http_response(response):
-    """
-    Just to print http response more verbose
-    """
-    print(response)
-    print("Статус-код:", response.status_code)
-    print("Заголовки:", response.headers)
-    print("Тело ответа:", response.text)
-    print("URL:", response.url)
-    print("Cookies:", response.cookies)
-    print("История редиректов:", response.history)
-    print("Cannot get response!")
 
 # gets template name
 # returns array of page names
@@ -276,9 +313,11 @@ def get_wp_pages_by_category(category, namespace=1):
     while have_data_to_get:
         response = get_wp_page_content(params_1)
         for page in response.json()['query']['categorymembers']:
+            #for page in response:
             if page['ns'] == namespace or \
               page['ns'] == 14:
                 result.append(page['title'].replace('Обсуждение:',''))
+        #print(response.json())    
         if 'continue' in response.json().keys():
             print(f"Let's continue getting by category {category}! {len(result)} so far.")
             # print(response.json()['continue'])
@@ -286,6 +325,7 @@ def get_wp_pages_by_category(category, namespace=1):
             have_data_to_get = True
         else:
             have_data_to_get = False
+        #have_data_to_get = False
     return sorted(result)
 
 def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
@@ -320,65 +360,9 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
         f"{len(cats)} categories left.")
     return pages
 
-def get_wp_pages_content(viet_pages,r,limit=100000):
-    viet_pages_content = []
-    viet_pages_not_patrolled = []
-    viet_pages_old_patrolled = []
-
-    paginas = get_wp_content_cached(viet_pages,r)
-    for page in paginas:
-        viet_pages_content.append({
-            "title": page['title'],
-            "content": page['content'],
-            "categories": page['categories']
-        })
-        if page["flagged"] == "never":
-            #print(f"{page["title"]} never")
-            viet_pages_not_patrolled.append(page['title'])
-        elif page["flagged"] == "current":
-            #print(f"{page["title"]} current, no do")
-            #
-            pass
-        else:
-            #print(f"{page["title"]} old, numbah ten")
-            viet_pages_old_patrolled.append({
-                "title": page['title'],
-                "date": page["flagged_date"]
-            })
-
-    # TODO rework patrolled stats
-    viet_pages_content = sorted(viet_pages_content, key=lambda d: d['title'])
-    viet_pages_not_patrolled = sorted(viet_pages_not_patrolled)
-    viet_pages_old_patrolled = sorted(viet_pages_old_patrolled, key=lambda d: d['date'])
-    return viet_pages_content, viet_pages_not_patrolled, viet_pages_old_patrolled
-
-class OloloLink():
-    def __init__(self, link="", page=""):
-        self.link = link
-        self.page = page
-    def __repr__(self):
-        return f'[[{self.link}]] ({self.page})'
-
-def get_wp_internal_links(pages_content):
-    """
-    Build a big list of internal links (Ololo type) from a big list of pages content.
-    """
-    # TODO remove obsolete function
-    links_ololo = []
-    links_ololo_arr = []
-    i = 0
-    for page in pages_content:
-        i += 1
-        mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page['content'])
-        if mc:
-            for m in mc:
-                links_ololo.append(OloloLink(m, page['title']))
-                links_ololo_arr.append({'link': m, 'page': page['title']})
-    return links_ololo
-
 def get_wp_internal_links_flat(pages_content):
     """
-    Build a big list of internal links (just links) from a big list of pages content.
+    Builds a big list of internal links (just links) from a big list of pages content.
     """
     result = []
     for page in pages_content:
@@ -387,10 +371,12 @@ def get_wp_internal_links_flat(pages_content):
             result.append(m)
     return result
 
-def get_wp_page_sections(content):
+def get_wp_page_sections(content,exclude=None):
     """
     Get sections list (with content) from page wikitext.
     """
+    if exclude is None:
+        exclude = []
     section_contents = re.split(r"=[=]+[ ]*[^=]*[ ]*=[=]+", content)
     section_names = re.findall(r"(=[=]+)[ ]*([^=]*)[ ]*=[=]+", content)
     sections = [{
@@ -399,11 +385,13 @@ def get_wp_page_sections(content):
         'content': section_contents[0]
     }]
     for i in range(len(section_names)):
-        sections.append({
+        next_section = {
             'name': section_names[i][1].strip(),
             'level': len(section_names[i][0]),
             'content': section_contents[i+1]
-        })
+        }
+        if not next_section['name'] in exclude:
+            sections.append(next_section)
     return sections
 
 def get_date_format(date_str):
@@ -563,6 +551,19 @@ def get_norefs_nolinks_content(viet_page_content):
     # рабочий вариант
     # почти: нужно (?m) или как-то так
     refs = re.findall(r"<ref[^\>\/]*\>.*?\<\/ref\>", full_content)
+    for ref in refs:
+        full_content = full_content.replace(ref, "")
+    return full_content
+
+def get_nocites_nofilenames_content(page_content):
+    """
+    for checking centuries only
+    """
+    full_content = page_content
+    refs = re.findall(r"\[\[(?:Файл|File):[^|]*", full_content)
+    for ref in refs:
+        full_content = full_content.replace(ref, "")
+    refs = re.findall(r"«[^»]*", full_content)
     for ref in refs:
         full_content = full_content.replace(ref, "")
     return full_content
