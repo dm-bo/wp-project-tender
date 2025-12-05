@@ -474,7 +474,7 @@ def check_links_to_disambigs(pages_content,r):
                     print(f"{i_l['title']} - DIS IS A DISAMBIG!")
                     page_disambigs.append(f"[[{i_l['title']}]]")
         # pre-get (to make bulk requests and warm-up the cache)
-        print("Now resolving redirects...")
+        #print("Now resolving redirects...")
         #print(redirect_pairs)
         redirect_targets = []
         for i_p, key_p in redirect_pairs.items():

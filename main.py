@@ -99,6 +99,7 @@ red_con = get_redis_client()
 
 # NS 104 - project discussions
 result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
+# print("Pages by template =", result_pages)
 random.shuffle(result_pages)
 print("Pages by template randomized =", result_pages)
 

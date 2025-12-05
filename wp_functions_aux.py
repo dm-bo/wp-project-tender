@@ -5,6 +5,8 @@ import time # for sleep
 import ast # for str to dict
 import dateutil.parser  # pip install python-dateutil
 import requests
+import json # for compression
+import lz4.frame # for compression
 
 from config import get_tender_config
 
@@ -31,13 +33,29 @@ def normalize_link(link):
       {{nbsp}}
       <noinclude>
     """
+    #print(f"Pheis 1: >{link}<")
     if link == "":
         return ""
-    normalized_link = link[0].upper() + link[1:]
-    normalized_link = normalized_link.replace(" "," ").replace("  "," ").replace("_"," ").strip()
+    normalized_link = link
+    normalized_link = normalized_link.replace(" "," ").replace("_"," ")
+    normalized_link = normalized_link.replace(" "," ")
+    normalized_link = normalized_link.replace(" "," ")
     normalized_link = normalized_link.replace("&nbsp;"," ")
-    normalized_link = normalized_link.replace("&amp;","&").strip()
+    normalized_link = normalized_link.replace("&amp;","&")
+    if re.match(r"^:[^:]*$", normalized_link):
+        # print("BURN COLONS")
+        normalized_link = normalized_link.replace(":","")
+    normalized_link = normalized_link.strip()
+    normalized_link = re.sub(" [ ]*", " ", normalized_link)
+    # extra kostyli emptyness-check before indexing the string
+    # 100 крупнейших авиационных катастроф в России : [[ |60]]
+    if normalized_link == "":
+        return ""
+    #print(f"Phase 2: >{normalized_link}<")
+    normalized_link = normalized_link[0].upper() + normalized_link[1:]
     normalized_link = re.sub("#.*$","", normalized_link).strip()
+    
+    # TODO serch for odd links
     # if not link == normalized_link:
         # print(f"{link} normalized to {normalized_link}")
     return normalized_link
@@ -51,7 +69,8 @@ def find_redirect_in_content(content):
     pattern = re.compile(r"#перенаправление\s*\[\[(.*?)\]\]", re.IGNORECASE)
     m = pattern.search(content)
     if m:
-        return m.group(1)
+        return normalize_link(m.group(1)).split("|")[0]
+        #return m.group(1)
     pattern2 = re.compile(r"#REDIRECT\s*\[\[(.*?)\]\]", re.IGNORECASE)
     n = pattern2.search(content)
     if n:
@@ -173,6 +192,8 @@ def get_wp_content(titles,r):
             REQ_PARAMS.update(data["continue"])  # добавляем clcontinue и т. п.
         else:
             break
+    # DEBUG
+    #print(f"From the web request, all_pages keys: {all_pages.keys()}")
     paginas = []
     for pagid in all_pages.keys():
         paginas.append(all_pages[pagid])
@@ -187,10 +208,21 @@ def get_wp_content(titles,r):
     structured_pages = []
     for pagina in paginas:
         structured_page = structure_page_data(pagina)
+        # if re.search(r"180", structured_page['title']):
+            # print(f"Caching special page: {structured_page['title']}")
+        #compr_start = datetime.datetime.now()
+        j_structured_page = json.dumps(structured_page, ensure_ascii=False).encode("utf-8")
+        #print(f"JSONized: {j_structured_page}")
+        c_structured_page = lz4.frame.compress(j_structured_page, compression_level=12)
+        #compr_stop = datetime.datetime.now()
+        #print(f"compr time is {compr_stop - compr_start}")
+        #print(f"LZ4zed: {c_structured_page}")
+        #print(f"Compress result: {len(j_structured_page)}, {len(c_structured_page)}")
         r.setex(f"page:content:{structured_page['title']}",
             datetime.timedelta(hours=script_config["cache_content_ttl"]),
-            value=str(structured_page)
+            value=c_structured_page
             )
+            #value=str(c_structured_page)
         structured_pages.append(structured_page)
     return structured_pages
 
@@ -244,9 +276,17 @@ def get_wp_content_cached(titles,r,verbose=True):
     result = []
     for title in titles:
         normal_title = normalize_link(title)
-        red_cached = r.get(f"page:content:{normal_title}")
-        if red_cached:
-            next_result = ast.literal_eval(red_cached)
+        # red_cached = r.get(f"page:content:{normal_title}")
+        c_red_cached = r.get(f"page:content:{normal_title}")
+        # if red_cached:
+        if c_red_cached:
+            #decompr_start = datetime.datetime.now()
+            j_structured_page = lz4.frame.decompress(c_red_cached)
+            red_cached = json.loads(j_structured_page.decode("utf-8"))
+            #decompr_stop = datetime.datetime.now()
+            #print(f"decompr time is {decompr_stop - decompr_start}")
+            #next_result = ast.literal_eval(red_cached)
+            next_result = red_cached
             next_result["flagged_date"] = datetime.datetime.fromisoformat(next_result["flagged_date"])
             result.append(next_result)
         else:
