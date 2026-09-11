@@ -1,11 +1,17 @@
+"""
+Some functions not providing WP checks.
+Parsers, web requests and so on.
+"""
+
 import sys
 import re
 import datetime
 import time # for sleep
 import ast # for str to dict
+import json # for compression
+
 import dateutil.parser  # pip install python-dateutil
 import requests
-import json # for compression
 import lz4.frame # for compression
 
 from config import get_tender_config
@@ -14,7 +20,7 @@ script_config = get_tender_config()
 
 def print_http_response(response):
     """
-    Just to print http response more verbose
+    Just to print http response more verbose way
     """
     print(response)
     print("Статус-код:", response.status_code)
@@ -32,8 +38,8 @@ def normalize_link(link):
       #something
       {{nbsp}}
       <noinclude>
+    And capitalizes first letter.
     """
-    #print(f"Pheis 1: >{link}<")
     if link == "":
         return ""
     normalized_link = link
@@ -43,7 +49,6 @@ def normalize_link(link):
     normalized_link = normalized_link.replace("&nbsp;"," ")
     normalized_link = normalized_link.replace("&amp;","&")
     if re.match(r"^:[^:]*$", normalized_link):
-        # print("BURN COLONS")
         normalized_link = normalized_link.replace(":","")
     normalized_link = normalized_link.strip()
     normalized_link = re.sub(" [ ]*", " ", normalized_link)
@@ -51,13 +56,9 @@ def normalize_link(link):
     # 100 крупнейших авиационных катастроф в России : [[ |60]]
     if normalized_link == "":
         return ""
-    #print(f"Phase 2: >{normalized_link}<")
     normalized_link = normalized_link[0].upper() + normalized_link[1:]
     normalized_link = re.sub("#.*$","", normalized_link).strip()
-    
-    # TODO serch for odd links
-    # if not link == normalized_link:
-        # print(f"{link} normalized to {normalized_link}")
+
     return normalized_link
 
 def find_redirect_in_content(content):
@@ -113,6 +114,11 @@ def get_wp_page_content(params):
     return False
 
 def structure_page_data(page_data):
+    """
+    Rebuilds page data and metadata from API response format
+    to internar simplified format.
+    Also provides some very basic content analisys.
+    """
     flagged_date = "1970-01-01"
     debug_title = "Азиатские игры"
     if not 'flagged' in page_data:
@@ -185,8 +191,6 @@ def get_wp_content(titles,r):
                     all_pages[page['title']][key] += page[key]
                 else:
                     all_pages[page['title']][key] = page[key]
-                # print(f"Key {key}:")
-                # print(page[key])
         # проверяем, есть ли продолжение
         if "continue" in data:
             REQ_PARAMS.update(data["continue"])  # добавляем clcontinue и т. п.
@@ -294,7 +298,7 @@ def get_wp_content_cached(titles,r,verbose=True):
     # Last man's check
     if not len(titles) == len(result):
         print(f"FATAL: argument length ({len(titles)}) doesn't match with result length ({len(result)}) !")
-        exit(8)
+        sys.exit(8)
     #result = sorted(result, key=lambda x: x.title, reverse=True)
     result = sorted(result, key=lambda d: d['title'])
     return result
@@ -302,6 +306,10 @@ def get_wp_content_cached(titles,r,verbose=True):
 # gets template name
 # returns array of page names
 def get_wp_pages_by_template(template, namespace):
+    """
+    Requests and returns pages that have given template included.
+    Strips "Обсуждение:", so never returns talk pages, returns article names instead.
+    """
     INIT_PARAMS = {
         "action": "query",
         "titles": template,
@@ -402,11 +410,36 @@ def get_wp_pages_by_category_recurse(cats, cat_namespace=1):
 
 def get_wp_internal_links_flat(pages_content):
     """
-    Builds a big list of internal links (just links) from a big list of pages content.
+    Builds a big list of internal links from a big list of pages content.
+    Only returns links from square brackets — [[Example]].
+    Doesn't return links from templates — {{examples|Example}}
     """
     result = []
     for page in pages_content:
         mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page['content'])
+        for m in mc:
+            result.append(m)
+    return result
+
+def get_wp_internal_links_flat_reduced(pages_content):
+    """
+    Builds a big list of internal links (just links) from a big list of pages content.
+    Excludes some false disambigs.
+    """
+    result = []
+    for page in pages_content:
+        page_reduced = page['content']
+        page_reduced = re.sub(
+            r'\{\{португальская фамилия(?:\|[^{}]*)?\}\}',
+            '',
+            page_reduced
+        )
+        page_reduced = re.sub(
+            r'\{\{испанская фамилия(?:\|[^{}]*)?\}\}',
+            '',
+            page_reduced
+        )
+        mc = re.findall(r"\[\[([^\|\]\:]*)[\|\]]", page_reduced)
         for m in mc:
             result.append(m)
     return result
@@ -502,7 +535,7 @@ def get_wp_authenticated_session(login, password):
 
 def set_wp_page_text(session, title, text, summary):
     """
-    Replace wikitext of page. Entirely.
+    Replace wikitext of page. Entirely. Online. On WP server.
     """
     if not get_wp_authentication_status(session):
         print("Session is not authenticated! Aborting.")
@@ -535,10 +568,12 @@ def set_wp_page_text(session, title, text, summary):
     print(response.json()['edit'])
     return False
 
-def parse_check_template(template_text,target_page):
+def parse_check_template(template_text):
     """
     Parse template text to dict
     """
+    # FIXME remove all "script_config["project"][target_page]" from here,
+    #  it brokes inheritrance in next template versions
     template_dict = {}
     mc2 = re.findall(r"\|([\-_ a-zA-Z0-9\n]*)\=([^\|}]*)", template_text)
     # just text parsing
@@ -553,31 +588,40 @@ def parse_check_template(template_text,target_page):
         template_dict["timestamp_date"] = dateutil.parser.parse(template_dict['timestamp'])
     else:
         template_dict["timestamp_date"] = datetime.datetime.fromtimestamp(0)
+
     # time_cooldown in days
-    # is it okay to use "try" like this?..
-    try:
-        template_dict["time_cooldown"] = script_config["project"][target_page]["time_cooldown"]
-    except KeyError:
+    if 'time_cooldown' in template_dict.keys():
+        template_dict["time_cooldown"] = int(template_dict["time_cooldown"])
+    else:
         print("No specific time_cooldown found, using a default one.")
         template_dict["time_cooldown"] = script_config["time_cooldown"]
-    # cooldown_threshold - when should check next time
-    template_dict["cooldown_threshold"] = \
-      template_dict["timestamp_date"] + datetime.timedelta(days=template_dict["time_cooldown"])
-    # is it old enough
-    if datetime.datetime.now() > template_dict["cooldown_threshold"]:
-        template_dict["old_enough"] = True
-    else:
-        template_dict["old_enough"] = False
 
     # overdated_threshold - how many dates can be wikified
-    try:
-        template_dict["overdated_threshold"] = \
-          script_config["project"][target_page]["overdated_threshold"]
-    except KeyError:
-        print("No specific overdated_threshold found, using a default one.")
+    if 'overdated_threshold' in template_dict.keys():
+        template_dict["overdated_threshold"] = int(template_dict["overdated_threshold"])
+        print("No specific overdated_threshold found, using a value from page.")
+    else:
         template_dict["overdated_threshold"] = script_config["overdated_threshold"]
+        print("No specific overdated_threshold found, using a default one.")
     # TODO remove unnecessary timestamps
     return template_dict
+
+def build_running_config(page, check_template, script_config):
+    result = check_template
+
+    try:
+        result["overdated_threshold"] = \
+          script_config["project"][page]["overdated_threshold"]
+    except KeyError:
+        print("No specific overdated_threshold found, using an old one.")
+
+    try:
+        result["time_cooldown"] = \
+          script_config["project"][page]["time_cooldown"]
+    except KeyError:
+        print("No specific time_cooldown found, using an old one.")
+
+    return result
 
 def get_norefs_nolinks_content(viet_page_content):
     result = []

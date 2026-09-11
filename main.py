@@ -14,12 +14,16 @@ from jinja2 import Environment, FileSystemLoader
 from wp_functions_aux import get_wp_pages_by_template, get_wp_pages_by_category_recurse
 from wp_functions_aux import get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_wp_content_cached
-from wp_functions_aux import parse_check_template
+from wp_functions_aux import parse_check_template, build_running_config
 #
-from wp_functions_check import check_links_to_disambigs
+from wp_functions_check import check_links_to_disambigs_fast
 from wp_functions_check import check_patrolling
 from wp_functions_check import check_wp_overdated
 
+from get_all_redirects_2 import ensure_redirects_cache
+
+# for fun
+from wp_functions_aux import get_wp_pages_by_category
 
 from wp_functions_check import check_wp_naked_links, \
     check_wp_no_links_in_links, \
@@ -58,6 +62,8 @@ from wp_functions_check import check_wp_naked_links, \
 
 from wp_auth_data import get_auth_data
 from config import get_redis_client, get_tender_config
+
+# TODO ! check if session is interactive -> confirm cache reload
 
 # TODO check Template:Чистить| (problem)
 # TODO check if no {{references}} but has <ref> or {{sfn}}
@@ -103,6 +109,35 @@ result_pages = get_wp_pages_by_template("User:KlientosBot/project-tender", 104)
 random.shuffle(result_pages)
 print("Pages by template randomized =", result_pages)
 
+result_pages_static = None
+#result_pages_static = ["Проект:Холокост/Недостатки статей", "Проект:Мифология/Недостатки статей"]
+#result_pages_static = ['Проект:Вьетнам/Недостатки статей']
+#result_pages_static = ['Проект:Россия/Недостатки статей/Вологодская область']
+if result_pages_static:
+    print()
+    print("NOTICE: запускаем со статичным набором страниц.")
+    print()
+    print("Было:",result_pages)
+    result_pages = result_pages_static
+    print("Стало:",result_pages)
+
+# DISAMBIGS CACHING
+REDIRECTS_KEY = "wiki:ru:redirects"
+REDIRECTS_TTL = 3 * 24 * 3600
+RELOAD_THRESHOLD = 3 * 3600
+ttl = red_con.ttl(script_config["REDIS_DISAMB_SET"])
+if ttl >= script_config["REDIS_SET_RELOAD_THRESHOLD"]:
+    print(f"Disambig cache is still warm ({round(ttl/3600, 1)} hours)")
+else:
+    disambs = get_wp_pages_by_category("Категория:Страницы значений по алфавиту", namespace=0)
+    red_con.delete(script_config["REDIS_DISAMB_SET"])
+    red_con.sadd(script_config["REDIS_DISAMB_SET"], *disambs)
+    red_con.expire(script_config["REDIS_DISAMB_SET"], REDIRECTS_TTL)
+    print("Got some disambigs:", len(disambs))
+
+# REDIRECTS CACHING
+ensure_redirects_cache(red_con)
+
 # iterate over found projects
 for post_results_page in result_pages:
     print("")
@@ -129,9 +164,13 @@ for post_results_page in result_pages:
         result_content[0]['content'])
     template_options = ""
     if mc1:
-        check_template = parse_check_template(mc1[0], post_results_page)
+        check_template = parse_check_template(mc1[0])
         print(check_template)
-        if not check_template["old_enough"]:
+        # TODO replace all following "check_template" with running_config
+        running_config = build_running_config(post_results_page, check_template, script_config)
+
+        if running_config["timestamp_date"] + datetime.timedelta(days=running_config["time_cooldown"]) \
+          > datetime.datetime.now():
             print("Not old enough, skipping")
             continue
         # making options for a new template
@@ -691,7 +730,7 @@ for post_results_page in result_pages:
             title="Ссылки на неоднозначности",
             descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки " +
                 "необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
-            pages=check_links_to_disambigs(pages_content2,red_con),
+            pages=check_links_to_disambigs_fast(pages_content2,red_con,script_config),
             total=len(viet_pages))
         )
 
@@ -719,7 +758,7 @@ for post_results_page in result_pages:
         print(f"... wrote {OUTPUT_FILE}")
 
     # Web
-    #exit(0)
+    # sys.exit(7)
     if set_wp_page_text(session, post_results_page, content, summary):
         print("Updated.")
     else:
@@ -727,4 +766,3 @@ for post_results_page in result_pages:
 
     ### Stats ###
     print(datetime.datetime.now()-moment_start)
-

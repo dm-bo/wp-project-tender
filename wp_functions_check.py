@@ -3,8 +3,10 @@ import re
 from wp_functions_aux import get_wp_page_sections, get_date_format
 from wp_functions_aux import get_norefs_nolinks_content, get_justtext_content
 from wp_functions_aux import get_wp_content_cached
-from wp_functions_aux import get_wp_internal_links_flat
-from wp_functions_aux import get_wp_internal_links_flat, get_nocites_nofilenames_content
+from wp_functions_aux import get_wp_internal_links_flat, get_wp_internal_links_flat_reduced
+from wp_functions_aux import get_nocites_nofilenames_content
+
+from wp_functions_aux import normalize_link
 
 class ProblemPage():
     def __init__(self, title="", counter=None, samples=[], note=""):
@@ -113,6 +115,7 @@ def check_wp_centuries2(viet_pages_content):
 def check_wp_communes(viet_pages_content):
     result = []
     for page in viet_pages_content:
+        # OMG
         if page['title'] == "Пиньо де Беэн, Пьер":
             continue
         samples = []
@@ -304,6 +307,7 @@ def check_wp_poor_dates(viet_pages_content):
         bad_dates = []
         mc = re.findall(r"{{[cC]ite web[^{}]+(?:{{[^}]+}})*[^{}]+}}", page['content'])
         for m in mc:
+            # TODO write common template parser
             cite_dates = re.findall("\|[ ]*archive[-]?date[ ]*=[ ]*([^\|\n}]*)", m)
             cite_dates += re.findall("\|[ ]*date[ ]*=[ ]*([^\|\n}]*)", m)
             cite_dates += re.findall("\|[ ]*datepublished[ ]*=[ ]*([^\|\n}]*)", m)
@@ -344,6 +348,7 @@ def check_wp_snprep(viet_pages_content):
         mc = re.findall(r".{6}[\.\,][ ]*(?:<ref[ >]|{{sfn\|)", page['content'])
         samples = []
         for m in mc:
+            # FIXME has duplicates
             if re.search(r"[  ]г.(<|{)", m) or \
               re.search(r"[  ]с.(<|{)", m) or \
               re.search(r"[  ](гг|лл|др|пр|вв|руб|экз|чел|л\. с|н\. э|т\.[  ]д|т\.[  ]п)\.(<|{)", m) or \
@@ -450,51 +455,48 @@ def check_wp_images(pages_content, exclude=None):
     # result_sorted = sorted(result_unique, key=lambda x: x.title)
     # return result_sorted
 
-def check_links_to_disambigs(pages_content,r):
-    # Step 1. Dump all links targets to cache
-    # Step 2. Get content for all link targets (non -redirects)
-    # Sep 3. For all redirects, get a redirect target and check it
+def check_links_to_disambigs_fast(pages_content,r,script_config):
+    """
+    Checks if internal links in given content are links to disambiguation
+    """
+
     result = []
     i = 0
     for page in pages_content:
         i = i + 1
         print(f"Checking disambigs on {page['title']} ( {i} / {len(pages_content)} )")
         page_disambigs = []
-        internal_links = get_wp_internal_links_flat([page])
-        internal_links_targets_content = get_wp_content_cached(internal_links,r,verbose=False)
-        redirect_pairs = {}
+        internal_links = get_wp_internal_links_flat_reduced([page])
         redirects = []
-        for i_l in internal_links_targets_content:
-            if 'redirects_to' in i_l:
-                if i_l['redirects_to']:
-                    #print("R".ljust(12) + f"{i_l['title']} -> {i_l['redirects_to']}")
-                    redirect_pairs[i_l['title']] = i_l['redirects_to']
-            if 'categories' in i_l:
-                if "Категория:Страницы значений по алфавиту" in i_l['categories']:
-                    print(f"{i_l['title']} - DIS IS A DISAMBIG!")
-                    page_disambigs.append(f"[[{i_l['title']}]]")
-        # pre-get (to make bulk requests and warm-up the cache)
-        #print("Now resolving redirects...")
-        #print(redirect_pairs)
-        redirect_targets = []
-        for i_p, key_p in redirect_pairs.items():
-            redirect_targets.append(key_p)
-        get_wp_content_cached(redirect_targets,r,verbose=False)
-        # move along with a warm cache
-        for i_p, key_p in redirect_pairs.items():
-            #print(f"workink on i_p, key_p: {i_p}, {key_p}")
-            redirect_target_content = get_wp_content_cached([key_p],r,verbose=False)[0]
-            #print(redirect_target_content)
-            if "Категория:Страницы значений по алфавиту" in redirect_target_content['categories']:
-                print("DIS IS A REDIRECTR To DISAMBIG!!!")
-                page_disambigs.append(f"[[{i_p}]]")
+        
+        # Phase 1 — check if direct links point to disambig, save redirects to resolve later
+        for i_l in internal_links:
+            if r.sismember(script_config["REDIS_DISAMB_SET"], normalize_link(i_l)):
+                print(f"{i_l} - DIS IS A DISAMBIG! ( F A S T ! . . )")
+                page_disambigs.append(f"[[{i_l}]]")
+            if r.sismember(script_config["REDIS_REDIR_SET"], normalize_link(i_l)):
+                # print(f"{i_l} - DIS IS A REDIRECT! ( F A S T ! . . )      Resolving... //slow//")
+                redirects.append(i_l)
+
+        # Phase 2 — check if redirects point to disambig
+        if redirects:
+            resolved_redirects = get_wp_content_cached(redirects,r,verbose=False)
+            for r_r in resolved_redirects:
+                if r.sismember(script_config["REDIS_DISAMB_SET"], normalize_link(r_r['redirects_to'])):
+                    print(f"{r_r['title']} - DIS IS A REDIRECTR To DISAMBIG {r_r['redirects_to']}! (Fast, but slow resolved)")
+                    page_disambigs.append(f"[[{r_r['title']}]]")
+        # NOTE: doesn't detect double redirects to disambigs
+                    
+        # Adding disambig links (if any) to the problem list
         page_disambigs_sorted = sorted(set(page_disambigs))
+        # print(page_disambigs)
         if len(page_disambigs) > 0:   
             result.append(ProblemPage(title=page['title'],samples=page_disambigs_sorted))
             print(f"{page['title']} added with disambigs {page_disambigs_sorted}")
+
     result = sorted(result, key=lambda x: x.title, reverse=False)
     return result
-
+    
 def check_patrolling(pages_content):
     not_patrolled, old_patrolled, result = [], [], []
     for page in pages_content:
