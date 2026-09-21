@@ -475,7 +475,6 @@ def check_links_to_disambigs_fast(pages_content,r,script_config):
                 print(f"{i_l} - DIS IS A DISAMBIG! ( F A S T ! . . )")
                 page_disambigs.append(f"[[{i_l}]]")
             if r.sismember(script_config["REDIS_REDIR_SET"], normalize_link(i_l)):
-                # print(f"{i_l} - DIS IS A REDIRECT! ( F A S T ! . . )      Resolving... //slow//")
                 redirects.append(i_l)
 
         # Phase 2 — check if redirects point to disambig

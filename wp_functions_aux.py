@@ -10,6 +10,8 @@ import time # for sleep
 import ast # for str to dict
 import json # for compression
 
+import copy
+
 import dateutil.parser  # pip install python-dateutil
 import requests
 import lz4.frame # for compression
@@ -421,6 +423,7 @@ def get_wp_internal_links_flat(pages_content):
             result.append(m)
     return result
 
+# FIXME not a content!
 def get_wp_internal_links_flat_reduced(pages_content):
     """
     Builds a big list of internal links (just links) from a big list of pages content.
@@ -607,19 +610,29 @@ def parse_check_template(template_text):
     return template_dict
 
 def build_running_config(page, check_template, script_config):
-    result = check_template
+    result = copy.deepcopy(check_template)
+
+    #
 
     try:
         result["overdated_threshold"] = \
           script_config["project"][page]["overdated_threshold"]
     except KeyError:
         print("No specific overdated_threshold found, using an old one.")
+        pass
 
     try:
         result["time_cooldown"] = \
           script_config["project"][page]["time_cooldown"]
     except KeyError:
         print("No specific time_cooldown found, using an old one.")
+        pass
+
+    # set empty prologue and epilogue if not defined
+    if 'prologue' not in check_template.keys():
+        result['prologue'] = ""
+    if 'epilogue' not in check_template.keys():
+        result['epilogue'] = ""
 
     return result
 
