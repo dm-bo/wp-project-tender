@@ -18,55 +18,18 @@ from wp_functions_aux import get_wp_authenticated_session, set_wp_page_text
 from wp_functions_aux import get_wp_content_cached
 from wp_functions_aux import parse_check_template, build_running_config
 from wp_functions_aux import get_wp_internal_links_flat
-#
-from wp_functions_check import check_links_to_disambigs_fast
-from wp_functions_check import check_patrolling
-from wp_functions_check import check_wp_overdated
-
-from get_all_redirects_2 import ensure_redirects_cache
-
 # for fun
 from wp_functions_aux import get_wp_pages_by_category
 
-from wp_functions_check import check_wp_naked_links, \
-    check_wp_no_links_in_links, \
-    check_wp_no_refs, \
-    check_wp_pages_direct_interwikis, \
-    check_wp_wp_links, \
-    check_wp_wkimedia_links, \
-    check_wp_pages_bot_titles, \
-    check_wp_pages_bot_archives, \
-    check_wp_no_cats, \
-    check_wp_pages_direct_googlebooks, \
-    check_wp_pages_direct_webarchive, \
-    check_wp_snprep, \
-    check_wp_semicolon_sections, \
-    check_wp_too_few_wikilinks, \
-    check_wp_poor_dates, \
-    check_wp_pages_square_km, \
-    check_wp_pages_square_km_sup, \
-    check_wp_pages_square_m_sup, \
-    check_wp_links_in_text, \
-    check_wp_template_regexp, \
-    check_wp_icon_template, \
-    check_wp_ref_templates, \
-    check_wp_isolated, \
-    check_wp_pages_empty, \
-    check_wp_no_sources, \
-    check_wp_source_request, \
-    check_wp_links_unavailable, \
-    check_wp_centuries2, \
-    check_wp_pages_delimiters, \
-    check_wp_communes, \
-    check_wp_images
-
+from get_all_redirects_2 import ensure_redirects_cache
 
 # from wp_functions_check import *
 
 from wp_auth_data import get_auth_data
 from config import get_redis_client, get_tender_config
 
-# TODO ! check if session is interactive -> confirm cache reload
+from analysis.checks import CHECKS
+from analysis.runner import run_checks
 
 # TODO check Template:Чистить| (problem)
 # TODO check if no {{references}} but has <ref> or {{sfn}}
@@ -104,29 +67,8 @@ def concatenate_template_options(check_template_new):
     return template_options
 
 def get_checks_enabled(running_config):
-    # FIXME to config
-    checks_enabled = {
-        "CiteDecorations": True,
-        "PoorDates": True,
-        "Communes": False,
-        "Images": False,
-        "Experimental": False,
-        "Disambigs": False,
-        "UglyRedirects": False
-    }
 
-    # enable_checks
-    if 'enable_checks' in running_config.keys():
-        enabled_checks = running_config['enable_checks'].replace(' ','').split(',')
-        for ec in enabled_checks:
-            checks_enabled[ec] = True
-    # disable_checks
-    if 'disable_checks' in running_config.keys():
-        disable_checks = running_config['disable_checks'].replace(' ','').split(',')
-        for dc in disable_checks:
-            checks_enabled[dc] = False  
-
-    return checks_enabled
+    return None
 
 def extract_raw_check_template(content):
     """
@@ -135,11 +77,10 @@ def extract_raw_check_template(content):
     """
     mc1 = re.findall(r"{{User:Klientos(?:Bot)?/project-tender[ \n]*\|[^}]*}}",
         content)
-        
+
     if mc1:
         return mc1[0]
-    else:
-        return None
+    return None
 
 def get_target_pages(running_config,red_con):
     viet_pages = []
@@ -158,7 +99,7 @@ def get_target_pages(running_config,red_con):
         else:
             print("Unknown search criteria!")
             continue
-            
+
     # Loading exceptions list
     exclude_pages = get_excluded_pages(running_config,red_con)
     print("exclude_pages", exclude_pages)
@@ -166,7 +107,7 @@ def get_target_pages(running_config,red_con):
     print("Total pages found:", len(viet_pages))
     viet_pages = list(set(viet_pages) - set(exclude_pages))
     print("After omitting some pages:", len(viet_pages))
-        
+
     return viet_pages
 
 def get_excluded_pages(running_config,red_con):
@@ -196,9 +137,12 @@ def main():
     print("Pages by template randomized =", result_pages)
 
     result_pages_static = None
-    #result_pages_static = ["Проект:Холокост/Недостатки статей", "Проект:Мифология/Недостатки статей"]
-    result_pages_static = ['Проект:Вьетнам/Недостатки статей']
-    #result_pages_static = ['Проект:Россия/Недостатки статей/Вологодская область']
+    #result_pages_static = ["Проект:Холокост/Недостатки статей"]
+    #result_pages_static = ["Проект:Мифология/Недостатки статей"]
+    #result_pages_static = ["Проект:Православие/Недостатки статей/Православное богословие"]
+    #result_pages_static = ['Проект:Вьетнам/Недостатки статей']
+    #result_pages_static = ['Проект:Карелия/Недостатки статей']
+    #result_pages_static = ["Проект:Киберспорт/Недостатки_статей"]
     if result_pages_static:
         print()
         print("NOTICE: запускаем со статичным набором страниц.")
@@ -228,8 +172,6 @@ def main():
     ### iterate over found projects ###
     for post_results_page in result_pages:
         print("\nWorking on", post_results_page)
-        checks = []
-        summary = "плановое обновление данных"
 
         raw_check_template = extract_raw_check_template(
             get_wp_content_cached([post_results_page],red_con)[0]['content'])
@@ -253,16 +195,18 @@ def main():
 
             check_template_new['timestamp'] = datetime.datetime.now()
             #print("check_template_new 2", check_template_new)
+            
+            # TODO what means timestamp vs. timestamp_date ?
         else:
             print("No bot template found! Exiting.")
             sys.exit(46)
 
         checks_enabled = get_checks_enabled(running_config)
 
-        # search criteria
+        # get target page names
         viet_pages = get_target_pages(running_config,red_con)
-                
-
+        # ... and tagret pages content
+        pages_content2 = get_wp_content_cached(viet_pages,red_con)
 
         area = re.findall(r"\:([^\/\:]*)\/", post_results_page)[0]
         area = re.findall(r"\:(.*)", post_results_page)[0].replace("/","_")
@@ -271,501 +215,82 @@ def main():
 
         print("Updating page ", post_results_page)
 
-        checks.append(Check(
+        # TODO make empty stub check?..
+        #checks.append(Check(
+        checks = [
+            Check(
             name="Total",
             title="Всего",
             pages=viet_pages,
             total=len(viet_pages),
             supress_listing=True)
-        )
-
-        ### Patrolling ####
-
-        pages_content2 = get_wp_content_cached(viet_pages,red_con)
-        checks.append(Check(
-            name="NotPatrolled",
-            title="Не отпатрулированные статьи",
-            pages=check_patrolling(pages_content2),
-            total=len(viet_pages))
-        )
+        ]
 
         ### Checks ###
 
-        checks.append(Check(
-            name="NakedLinks",
-            title="Голые ссылки",
-            descr="Нужно оформить ссылку в [[Ш:cite web]] или, хотя бы, в <code><nowiki>" + \
-                "[http://example.com Title]</nowiki></code>.",
-            pages=check_wp_naked_links(pages_content2),
+        checks_enabled_ng = {
+            check.name: check.is_enabled_by_default
+            for check in CHECKS
+        }
+
+        # enable_checks by template
+        if 'enable_checks' in running_config.keys():
+            enabled_checks = running_config['enable_checks'].replace(' ','').split(',')
+            for ec in enabled_checks:
+                # temporary dirty hack
+                if ec == "Disambigs":
+                    print(f"ALARMA! 'Disambigs' on page {post_results_page} (plez replace with 'BadLinks')")
+                    exit(98)
+                checks_enabled_ng[ec] = True
+        # disable_checks by template
+        if 'disable_checks' in running_config.keys():
+            disable_checks = running_config['disable_checks'].replace(' ','').split(',')
+            for dc in disable_checks:
+                # temporary dirty hack
+                if dc == "Disambigs":
+                    print(f"ALARMA! 'Disambigs' on page {post_results_page} (plez replace with 'BadLinks')")
+                    exit(98)
+                checks_enabled_ng[dc] = False
+
+        # Deal with check groups (somewhat legacy)
+        check_groups = {}
+        check_groups["CiteDecorations"] = {
+            "DirectWebarchive",
+            "TemplateRegexp Citation",
+            "TemplateRegexp Cite press release",
+            "TemplateRegexp Wayback",
+            "TemplateRegexp webarchive",
+            "TemplateRegexp Архивировано",
+            "TemplateRegexp Проверено",
+            "TemplateRegexp ISBN",
+            "IconTemplates",
+            "RefTemplates",
+        }
+        check_groups["Experimental"] = {
+            "TemplateRegexp h",
+            "BadDelimiters",
+        }
+        for key, value in check_groups.items():
+            print(f"Should we enable {key}?")
+            if key in checks_enabled_ng.keys():
+                print(f"checks_enabled_ng[{key}] is set to ({checks_enabled_ng[key]})!")
+                for chk in check_groups[key]:
+                    checks_enabled_ng[chk] = checks_enabled_ng[key]
+
+        # Consider ability to overwrite in script config
+        #print("checks_enabled_ng:", checks_enabled_ng)
+        #exit(99)
+
+        #checks = run_checks(
+        checks += run_checks(
+            checks=CHECKS,
+            checks_enabled=checks_enabled_ng,
+            pages=pages_content2,
             total=len(viet_pages),
-            nowiki=True)
+            red_con=red_con,
+            running_config=running_config,
+            script_config=script_config,
         )
-
-        print("Engaging check NoLinksInLinks and beyond")
-        checks.append(Check(
-            name="NoLinksInLinks",
-            title="Статьи без ссылок в разделе «Ссылки»",
-            descr="Если в «Ссылках» есть источники без http-сылок, то их, возможно, стоит " + \
-                "переместить в раздел «Литература».",
-            pages=check_wp_no_links_in_links(pages_content2,r=red_con),
-            total=len(viet_pages))
-        )
-
-        # print("Engaging check NoRefs")
-        checks.append(Check(
-            name="NoRefs",
-            title="Нет примечаний в разделе «Примечания»",
-            descr="Не считает примечания, подтянутые из ВД. В любом случае, было бы неплохо " + \
-                "добавить сноски в тело статьи.",
-            pages=check_wp_no_refs(pages_content2),
-            total=len(viet_pages))
-        )
-
-        #print(check_result)
-        checks.append(Check(
-            name="DirectInterwikis",
-            title="Статьи с прямыми интервики-ссылками",
-            descr="Нужно заменить на шаблон iw или добавить прямую ссылку на статью в РуВП, если " + \
-                "она уже есть.",
-            pages=check_wp_pages_direct_interwikis(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="WPLinks",
-            title="Ссылки на ВП как внешние",
-            descr="<nowiki>[http://ссылки]</nowiki> нужно поменять на <nowiki>[[ссылки]]</nowiki>.",
-            pages=check_wp_wp_links(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="WMLinks",
-            title="Ссылки на проекты Викимедиа как внешние",
-            descr="Вместо прямых ссылок на сестринские проекты используйте внутренние ссылки " +
-                "вида <code><nowiki>[[q:en:Star Wars]]</nowiki></code> (см. " +
-                "[[Википедия:Интервики#Коды проектов Фонда]]).",
-            pages=check_wp_wkimedia_links(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="BotTitles",
-            title="Заголовок добавлен ботом",
-            descr="Нужно проверить, что заголовок правильный, и убрать html-комментарий ''<nowiki>" + \
-                "<!-- Заголовок добавлен ботом --> или <!-- Bot generated title --></nowiki>''.",
-            pages=check_wp_pages_bot_titles(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="BotArchives",
-            title="Архив добавлен ботом",
-            descr="Нужно проверить архив, и убрать html-комментарий ''<nowiki><!-- Bot retrieved " + \
-                "archive --></nowiki>''.",
-            pages=check_wp_pages_bot_archives(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="NoCats",
-            title="Не указаны категории",
-            descr="Иногда категории назначаются шаблонами, тогда указывать категории напрямую не " +
-                "нужно. В таком случае категоризирующий шаблон следует учитывать при составлении " +
-                "этого списка.",
-            pages=check_wp_no_cats(pages_content2,r=red_con),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="DirectGoogleBooks",
-            title="Прямые ссылки на Google books",
-            descr="Их желательно поменять на [[Шаблон:книга]].",
-            pages=check_wp_pages_direct_googlebooks(pages_content2),
-            total=len(viet_pages))
-        )
-
-        if checks_enabled["CiteDecorations"] :
-            checks.append(Check(
-                name="DirectWebarchive",
-                title="Прямые ссылки на web.archive.org",
-                descr="Желательно заменить их на [[Ш:cite web]] с параметрами archiveurl и " +
-                    "archivedate.",
-                pages=check_wp_pages_direct_webarchive(pages_content2),
-                total=len(viet_pages))
-            )
-
-        checks.append(Check(
-            name="SNPREP",
-            title="[[ВП:СН-ПРЕП|СН-ПРЕП]]",
-            descr="Страницы, в тексте которых есть <code><nowiki>.<ref</nowiki></code> или " +
-                "<code><nowiki>.{{sfn</nowiki></code>, либо их вариации с пробелами, как <code>" +
-                "<nowiki>. <ref</nowiki></code>, а также те же сочетания с запятой. " +
-                "Сноска должна стоять перед точкой или запятой, кроме случаев, "+
-                "когда точка является частью сокращения.",
-            pages=check_wp_snprep(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="SemicolonSections",
-            title=";Недоразделы",
-            descr="Использована кострукция <code><nowiki>;Что-то</nowiki></code>. Скорее всего, её " +
-                "следует заменить, например, на <code><nowiki>=== Что-то ===</nowiki></code>.",
-            pages=check_wp_semicolon_sections(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="TooFewWikilinks",
-            title="Мало внутренних ссылок",
-            descr="Добавьте больше.",
-            pages=check_wp_too_few_wikilinks(pages_content2),
-            total=len(viet_pages))
-        )
-
-        if checks_enabled["PoorDates"]:
-            checks.append(Check(
-                name="PoorDates",
-                title="Неформатные даты в cite web",
-                descr="Используйте формат <code>YYYY-MM-DD</code> ([[ВП:ТД]]).",
-                pages=check_wp_poor_dates(pages_content2),
-                total=len(viet_pages),
-                nowiki=True)
-            )
-
-        checks.append(Check(
-            name="BadSquareKm",
-            title="Страницы с кв км или кв. км",
-            descr="Желательно поменять на км².",
-            pages=check_wp_pages_square_km(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="BadSquareKmSup",
-            title="Страницы с <nowiki>км<sup>2</sup></nowiki>",
-            descr="Желательно поменять на км².",
-            pages=check_wp_pages_square_km_sup(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="BadSquareMSup",
-            title="Страницы с <nowiki>м<sup>2</sup></nowiki>",
-            descr="Желательно поменять на м².",
-            pages=check_wp_pages_square_m_sup(pages_content2),
-            total=len(viet_pages))
-        )
-
-        print("Engaging check LinksInText")
-        checks.append(Check(
-            name="LinksInText",
-            title="Ссылки в тексте",
-            descr="Не следует вставлять внешние ссылки прямо в текст. Обычно они размещаются в " + \
-                "сносках, разделе «Ссылки» и других подобающих местах.",
-            pages=check_wp_links_in_text(pages_content2),
-            total=len(viet_pages),
-            nowiki=True)
-        )
-
-        # Template checks (can be looped later)
-
-        if checks_enabled["CiteDecorations"]:
-            template = "Citation"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
-                    "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
-                    "формате. N. B.: не забудьте добавить фамилию автора в ref, если " +
-                    "источник используется в сносках {{tl|sfn}}!",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "Cite press release"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
-                    "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
-                    "формате.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "PDFlink"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Используйте шаблоны {{tl|Книга}}, {{tl|Статья}} или {{tl|Cite web}} вместо " +
-                    "этого шаблона, чтобы ссылки отображались в принятом для русских публикаций " +
-                    "формате.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "Wayback"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Служебный шаблон для бота-архиватора. Ссылку и шаблон желательно " +
-                    "переоформлять на {{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
-                    "''archiveurl'' и ''archivedate''.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "webarchive"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Ссылку и шаблон желательно переоформлять на " +
-                    "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
-                    "''archiveurl'' и ''archivedate''.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "Архивировано"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Ссылку и шаблон желательно переоформлять на " +
-                    "{{tl|cite web}}, {{tl|Книга}} или {{tl|Статья}} с параметрами " +
-                    "''archiveurl'' и ''archivedate''.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "Проверено"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            template = "ISBN"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="Можно заменить на {{tl|книга}} с параметром ''isbn''.",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["Experimental"]:
-            template = "h"
-            checks.append(Check(
-                name=f"TemplateRegexp {template}",
-                title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-                descr="",
-                pages=check_wp_template_regexp(pages_content2, template),
-                total=len(viet_pages))
-            )
-
-        # End of templates checks
-
-        if checks_enabled["CiteDecorations"]:
-            checks.append(Check(
-                name="IconTemplates",
-                title="Страницы с *icon-шаблонами",
-                descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki>" +
-                    "</code>.",
-                pages=check_wp_icon_template(pages_content2),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["CiteDecorations"]:
-            checks.append(Check(
-                name="RefTemplates",
-                title="Страницы с ref-шаблонами",
-                descr="Не требуются, если ссылка оформлена в <code><nowiki>{{cite web}}</nowiki>" +
-                    "</code>.",
-                pages=check_wp_ref_templates(pages_content2),
-                total=len(viet_pages))
-            )
-
-        checks.append(Check(
-            name="Isolated",
-            title="Изолированные статьи",
-            descr="В другие статьи Википедии нужно добавить ссылки на такую статью, а потом удалить " +
-                "из неё шаблон об изолированности.",
-            pages=check_wp_isolated(pages_content2),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="Empty",
-            title="Очень короткие статьи",
-            descr="Содержат шаблон<code><nowiki>{{rq|empty}}</nowiki></code> или {{tl|дописать}}.",
-            pages=check_wp_pages_empty(pages_content2),
-            total=len(viet_pages))
-        )
-
-        # TODO этачо
-        # Надо разъединить этих сиамских близнецов
-        no_sources_pages = check_wp_no_sources(pages_content2)
-        no_sources_titles = [p.title for p in no_sources_pages]
-        # print(no_sources_titles)
-        checks.append(Check(
-            name="NoSources",
-            title="Статьи без источников",
-            descr="Статьи без разделов «Ссылки», «Литература», «Источники», примечаний или других " +
-                "признаков наличия источников.",
-            pages=no_sources_pages,
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="SourceRequest",
-            title="Страницы с запросом источников",
-            descr="Добавьте источники, а затем уберите шаблон запроса с исправленной страницы.",
-            pages=check_wp_source_request(pages_content2, no_sources_titles),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="LinksUnanvailable",
-            title="Недоступные ссылки",
-            descr="Нужно обновить ссылку, найти страницу в [http://web.archive.org/ архиве] или " +
-                "подобрать другой источник.",
-            pages=check_wp_links_unavailable(pages_content2),
-            total=len(viet_pages))
-        )
-
-        template = "Аффилированные источники"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "Спам-ссылки"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "Обновить"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "V"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "закончить перевод"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "плохой перевод"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        template = "Нерабочие сноски"
-        checks.append(Check(
-            name=f"TemplateRegexp {template}",
-            title=f"Страницы с шаблоном [[Шаблон:{template}|]]",
-            descr="",
-            pages=check_wp_template_regexp(pages_content2, template),
-            total=len(viet_pages))
-        )
-
-        checks.append(Check(
-            name="ArabicNumerals",
-            title="Века арабскими цифрами",
-            descr="Номера веков должны быть записаны рисмкими цифрами, см. [[ВП:ДАТЫ]].",
-            pages=check_wp_centuries2(pages_content2),
-            total=len(viet_pages))
-        )
-
-        if checks_enabled["Experimental"]:
-            checks.append(Check(
-                name="BadDelimiters",
-                title="Неформатные разделители в числах",
-                descr="В тексте есть конструкции вида 1,234,567 или 12.345.678. Если это одно число, " +
-                    "то в качестве разделителя групп цифр нужно использовать пробел (см. [[ВП:Ч]]).",
-                pages=check_wp_pages_delimiters(pages_content2),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["Communes"]:
-            checks.append(Check(
-                name="Communes",
-                title="Коммуны",
-                descr="Это актуально только для ПРО:Вьетнам, в прочих случаях должно быть выключено. " +
-                    "В статьях о Вьетнаме ''коммуны'' (а также, в большинстве " +
-                    "случаев, ''приходы'' и ''деревни'') следует заменить на ''общины''.",
-                pages=check_wp_communes(pages_content2),
-                total=len(viet_pages))
-            )
-
-        if checks_enabled["Images"]:
-            checks.append(Check(
-                name="Images",
-                title="Нужно добавить изображение",
-                descr="В статье стоит запрос изображения, или статья иным образом включена в одну из" +
-                    "категорий \"Категория:Википедия:Статьи без изображений*\". ",
-                pages=check_wp_images(pages_content2),
-                total=len(viet_pages))
-            )
-
-        ### Overwikified dates ###
-        checks.append(Check(
-            name="OverDated",
-            title="Статьи с наиболее перевикифицированными датами",
-            pages=check_wp_overdated(pages_content2,running_config["overdated_threshold"]),
-            total=len(viet_pages),
-            supress_stat=True)
-        )
-        #exit(0)
-
-        ### Search for disambigs ###
-        if checks_enabled["Disambigs"]:
-            checks.append(Check(
-                name="BadLinks",
-                title="Ссылки на неоднозначности",
-                descr="Такую ссылку надо заменить ссылкой на нужную статью, а если всё-таки " +
-                    "необходимо оставить ссылку на дизамбиг, то завернуть её в {{tl|D-l}}.",
-                pages=check_links_to_disambigs_fast(pages_content2,red_con,script_config),
-                total=len(viet_pages))
-            )
 
         ### Rendering ###
 
@@ -792,7 +317,7 @@ def main():
 
         # Web
         #sys.exit(7)
-        if set_wp_page_text(session, post_results_page, content, summary):
+        if set_wp_page_text(session, post_results_page, content, script_config["WP_COMMIT_NOTE"]):
             print("Updated.")
         else:
             print("Cannot update page.")
