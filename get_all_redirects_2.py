@@ -103,4 +103,4 @@ def ensure_redirects_cache(redis):
     redirects = get_all_redirects(redis)
 
 
-ensure_redirects_cache(red_con)
+# ensure_redirects_cache(red_con)

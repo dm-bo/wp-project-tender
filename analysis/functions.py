@@ -10,6 +10,12 @@ from wp_functions_aux import normalize_link
 
 from .definitions import ProblemPage
 
+def check_wp_return_all(viet_pages):
+    result = []
+    for page in viet_pages:
+        result.append(ProblemPage(title=page['title']))
+    return result
+
 # FIXME not a content!
 def check_wp_pages_square_km(viet_pages_content):
     result = []

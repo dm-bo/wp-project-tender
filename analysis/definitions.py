@@ -1,12 +1,3 @@
-# @dataclass
-# class CheckDefinition:
-    # name: str
-    # title: str
-    # descr: str
-    # func: Callable
-    # kwargs: dict = field(default_factory=dict)
-    # nowiki: bool = False
-    # is_enabled_by_default: bool = True
 
 from dataclasses import dataclass, field
 from typing import Callable, Any
@@ -30,6 +21,7 @@ class Check():
         self.nowiki = nowiki
         self.supress_listing = supress_listing
         self.supress_stat = supress_stat
+        self.supress_listing = supress_listing
     def __repr__(self):
         return f'{self.name} ({self.counter} pages found, {self.percent}%)'
 
@@ -43,6 +35,7 @@ class CheckDefinition:
     runtime_kwargs: dict[str, str] = field(default_factory=dict)
     nowiki: bool = False
     supress_stat: bool = False
+    supress_listing: bool = False
     is_enabled_by_default: bool = True
 
     def run(self, pages, total, runtime):
@@ -61,6 +54,7 @@ class CheckDefinition:
             total=total,
             nowiki=self.nowiki,
             supress_stat=self.supress_stat,
+            supress_listing=self.supress_listing,
         )
 
 class ProblemPage():

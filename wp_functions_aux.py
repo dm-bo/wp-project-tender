@@ -20,6 +20,9 @@ from config import get_tender_config
 
 script_config = get_tender_config()
 
+def remove_namespace(page_name):
+    return re.findall(r"\:(.*)", page_name)[0] #.replace("/","_")
+
 def print_http_response(response):
     """
     Just to print http response more verbose way
@@ -122,7 +125,6 @@ def structure_page_data(page_data):
     Also provides some very basic content analisys.
     """
     flagged_date = "1970-01-01"
-    debug_title = "Азиатские игры"
     if not 'flagged' in page_data:
         flagged = "never"
     elif 'pending_since' in page_data['flagged']:
@@ -136,11 +138,8 @@ def structure_page_data(page_data):
         content = page_data['revisions'][0]['slots']['main']['content']
     categories = []
     if "categories" in page_data:
-        # print("Cattegories:")
-        # print(page_data["categories"])
         for cat in page_data["categories"]:
             categories.append(cat["title"])
-        # categories = page_data["categories"]
     missing = "missing" in page_data
     redirects_to = find_redirect_in_content(content)
     return {
@@ -203,12 +202,6 @@ def get_wp_content(titles,r):
     paginas = []
     for pagid in all_pages.keys():
         paginas.append(all_pages[pagid])
-    # try:
-        # paginas = response.json()['query']['pages']
-    # except:
-        # print(f"!!! Can't get paginas from response! Params: {REQ_PARAMS}")
-        # print(response.json())
-        # sys.exit(404)
 
     # Converting to own-structured JSON and cache it
     structured_pages = []
@@ -497,7 +490,8 @@ def get_wp_authentication_status(session):
         return True
     return False
 
-def get_wp_authenticated_session(login, password):
+#def get_wp_authenticated_session(login, password):
+def get_wp_authenticated_session(auth_data):
     """
     Takes login/pass and retursns authenticated sessions
     """
@@ -513,19 +507,13 @@ def get_wp_authenticated_session(login, password):
     try:
         login_token = response.json()['query']['tokens']['logintoken']
     except:
-        print(response)
-        print("Статус-код:", response.status_code)
-        print("Заголовки:", response.headers)
-        print("Тело ответа:", response.text)
-        print("URL:", response.url)
-        print("Cookies:", response.cookies)
-        print("История редиректов:", response.history)
-        print("Cannot get session!")
+        print_http_response(response)
         exit(4)
+
     PARAMS_2 = {
         'action':     "login",
-        'lgname':     login,
-        'lgpassword': password,
+        'lgname':     auth_data["wp_login"],
+        'lgpassword': auth_data["wp_passw"],
         'lgtoken':    login_token,
         'format':     "json"
     }
@@ -585,20 +573,7 @@ def parse_check_template(template_text):
 
     ### more smart data ###
 
-    # cooldown things
-    # last timestamp as datetime
-    if 'timestamp' in template_dict.keys():
-        template_dict["timestamp_date"] = dateutil.parser.parse(template_dict['timestamp'])
-    else:
-        template_dict["timestamp_date"] = datetime.datetime.fromtimestamp(0)
-
-    # time_cooldown in days
-    if 'time_cooldown' in template_dict.keys():
-        template_dict["time_cooldown"] = int(template_dict["time_cooldown"])
-    else:
-        print("No specific time_cooldown found, using a default one.")
-        template_dict["time_cooldown"] = script_config["time_cooldown"]
-
+    # FIXME here and in build_running_config - awful
     # overdated_threshold - how many dates can be wikified
     if 'overdated_threshold' in template_dict.keys():
         template_dict["overdated_threshold"] = int(template_dict["overdated_threshold"])
@@ -606,27 +581,53 @@ def parse_check_template(template_text):
     else:
         template_dict["overdated_threshold"] = script_config["overdated_threshold"]
         print("No specific overdated_threshold found, using a default one.")
-    # TODO remove unnecessary timestamps
     return template_dict
 
 def build_running_config(page, check_template, script_config):
     result = copy.deepcopy(check_template)
 
-    #
+    # test it
+    result["working_page"] = page
+
+    # global config high-priority options
 
     try:
         result["overdated_threshold"] = \
           script_config["project"][page]["overdated_threshold"]
+        print("Forcing overdated_threshold from global config.")
     except KeyError:
-        print("No specific overdated_threshold found, using an old one.")
         pass
 
+    # cooldown things
+
+    # last timestamp as datetime
+    if 'timestamp' in check_template.keys():
+        result["timestamp_date"] = dateutil.parser.parse(check_template['timestamp'])
+    else:
+        result["timestamp_date"] = datetime.datetime.fromtimestamp(0)
+
+    # time_cooldown in days
+    if 'time_cooldown' in check_template.keys():
+        print("time_cooldown comes from template")
+        result["time_cooldown"] = int(check_template["time_cooldown"])
+    else:
+        print("No specific time_cooldown found, using a default one.")
+        result["time_cooldown"] = script_config["time_cooldown"]
+
+    # overwrite if set in global config
     try:
         result["time_cooldown"] = \
           script_config["project"][page]["time_cooldown"]
+        print(f"Forcing time_cooldown from global config.")
     except KeyError:
-        print("No specific time_cooldown found, using an old one.")
         pass
+
+    # time_cooldown as timedelta
+    result["cooldown_timedelta"] = datetime.timedelta(days=result["time_cooldown"])
+
+    result["next_run_date"] = result["timestamp_date"] + result["cooldown_timedelta"]
+
+    #
 
     # set empty prologue and epilogue if not defined
     if 'prologue' not in check_template.keys():
@@ -695,3 +696,10 @@ def get_justtext_content(viet_page_content, debug=False):
     if debug:
         return full_content, templs
     return full_content
+
+def overwrite_tmp_file(running_config, content):
+    OUTPUT_FILE = "tmp/results/badlinks-" + \
+      f"{remove_namespace(running_config["working_page"]).replace("/","_")}.py.txt"
+    with open(OUTPUT_FILE, mode="w", encoding="utf-8") as message:
+        message.write(content)
+        print(f"... wrote {OUTPUT_FILE}")

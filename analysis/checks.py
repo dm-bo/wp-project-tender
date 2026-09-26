@@ -1,5 +1,6 @@
 from .definitions import CheckDefinition
 from .functions import (
+    check_wp_return_all,
     check_patrolling,
     check_wp_naked_links,
     check_wp_no_links_in_links,
@@ -37,6 +38,14 @@ from .functions import (
 )
 
 CHECKS = [
+
+    CheckDefinition(
+        name="Total",
+        title="Всего",
+        descr="",
+        func=check_wp_return_all,
+        supress_listing=True
+    ),
 
     CheckDefinition(
         name="NotPatrolled",
